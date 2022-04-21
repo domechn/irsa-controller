@@ -33,7 +33,8 @@ type IamRoleServiceAccountSpec struct {
 
 type PolicySpec struct {
 	// +optional
-	ARN       string          `json:"arn,omitempty"`
+	ARN string `json:"arn,omitempty"`
+	// +optional
 	Statement []StatementSpec `json:"statement"`
 }
 
@@ -44,30 +45,37 @@ type StatementSpec struct {
 
 // IamRoleServiceAccountStatus defines the observed state of IamRoleServiceAccount
 type IamRoleServiceAccountStatus struct {
+	// +optional
+	RoleArn string `json:"roleArn,omitempty"`
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 	// +optional
-	Condition IrsaCondition `json:"condition"`
+	Condition IrsaCondition `json:"condition,omitempty"`
 	// +optional
 	Reason string `json:"reason,omitempty"`
 }
 
+// +kubebuilder:validation:Enum=Submitted;Pending;SaNameConflict;Forbidden;Failed;Progressing;Created
 type IrsaCondition string
 
 var (
-	IrsaSubmitted      IrsaCondition = ""
-	IrsaPending        IrsaCondition = "pending"
-	IrsaSaNameConflict IrsaCondition = "saNameConflict"
-	IrsaForbidden      IrsaCondition = "forbidden"
-	IrsaFailed         IrsaCondition = "failed"
-	IrsaProgressing    IrsaCondition = "progressing"
-	IrsaOK             IrsaCondition = "created"
+	IrsaSubmitted      IrsaCondition = "Submitted"
+	IrsaPending        IrsaCondition = "Pending"
+	IrsaSaNameConflict IrsaCondition = "SaNameConflict"
+	IrsaForbidden      IrsaCondition = "Forbidden"
+	IrsaFailed         IrsaCondition = "Failed"
+	IrsaProgressing    IrsaCondition = "Progressing"
+	IrsaOK             IrsaCondition = "Created"
 )
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 
 // IamRoleServiceAccount is the Schema for the iamroleserviceaccounts API
+// +kubebuilder:printcolumn:name="RoleArn",type=string,JSONPath=`.status.roleArn`
+// +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.condition`
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:subresource:status
 type IamRoleServiceAccount struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
