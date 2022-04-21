@@ -1,0 +1,16 @@
+domain: domc.me
+layout:
+- go.kubebuilder.io/v3
+projectName: irsa-controller
+repo: domc.me/irsa-controller
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: domc.me
+  group: irsa
+  kind: IamRoleServiceAccount
+  path: domc.me/irsa-controller/api/v1alpha1
+  version: v1alpha1
+version: "3"
