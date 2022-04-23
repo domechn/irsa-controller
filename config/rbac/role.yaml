@@ -48,10 +48,4 @@ rules:
   resources:
   - serviceaccount/finalizers
   verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
   - update
-  - watch

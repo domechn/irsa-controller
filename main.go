@@ -33,6 +33,7 @@ import (
 
 	irsav1alpha1 "domc.me/irsa-controller/api/v1alpha1"
 	"domc.me/irsa-controller/controllers"
+	"domc.me/irsa-controller/pkg/aws"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -79,8 +80,9 @@ func main() {
 	}
 
 	if err = (&controllers.IamRoleServiceAccountReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		IamRoleClient: &aws.Client{},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "IamRoleServiceAccount")
 		os.Exit(1)

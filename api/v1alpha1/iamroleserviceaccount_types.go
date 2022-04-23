@@ -28,13 +28,13 @@ type IamRoleServiceAccountSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Policy PolicySpec `json:"policy"`
-}
-
-type PolicySpec struct {
 	// +optional
 	ARN string `json:"arn,omitempty"`
 	// +optional
+	Policy *PolicySpec `json:"policy"`
+}
+
+type PolicySpec struct {
 	Statement []StatementSpec `json:"statement"`
 }
 
