@@ -28,19 +28,30 @@ type IamRoleServiceAccountSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
+	// ARN defines the arn of iam role existing in aws account which irsa will use
+	// if the fields is provided, ManagedPolicies and InlinePolicy will be useless
 	// +optional
 	ARN string `json:"arn,omitempty"`
+
 	// +optional
-	Policy *PolicySpec `json:"policy"`
+	ManagedPolicies []ManagedPolicySpec `json:"managedPolicies"`
+	// +optional
+	InlinePolicy *InlinePolicySpec `json:"inlinePolicy"`
 }
 
-type PolicySpec struct {
-	Statement []StatementSpec `json:"statement"`
+// ManagedPolicySpec defines the policies manged by aws
+type ManagedPolicySpec []string
+
+// InlinePolicySpec defines the policy create within iam role
+type InlinePolicySpec struct {
+	Statements []StatementSpec `json:"statements"`
 }
 
 type StatementSpec struct {
 	Resource []string `json:"resource"`
 	Action   []string `json:"action"`
+	// +kubebuilder:validation:Enum=Allow;Deny
+	Effect string `json:"effect"`
 }
 
 // IamRoleServiceAccountStatus defines the observed state of IamRoleServiceAccount
@@ -55,11 +66,11 @@ type IamRoleServiceAccountStatus struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Submitted;Pending;SaNameConflict;Forbidden;Failed;Progressing;Created
+// +kubebuilder:validation:Enum=Pending;SaNameConflict;Forbidden;Failed;Progressing;Created
 type IrsaCondition string
 
 var (
-	IrsaSubmitted      IrsaCondition = "Submitted"
+	IrsaSubmitted      IrsaCondition = ""
 	IrsaPending        IrsaCondition = "Pending"
 	IrsaSaNameConflict IrsaCondition = "SaNameConflict"
 	IrsaForbidden      IrsaCondition = "Forbidden"
