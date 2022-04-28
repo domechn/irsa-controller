@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"fmt"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -28,10 +30,10 @@ type IamRoleServiceAccountSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// ARN defines the arn of iam role existing in aws account which irsa will use
+	// RoleName defines the name of iam role existing in aws account which irsa will use
 	// if the fields is provided, ManagedPolicies and InlinePolicy will be useless
 	// +optional
-	ARN string `json:"arn,omitempty"`
+	RoleName string `json:"roleName,omitempty"`
 
 	// +optional
 	ManagedPolicies []ManagedPolicySpec `json:"managedPolicies"`
@@ -106,4 +108,9 @@ type IamRoleServiceAccountList struct {
 
 func init() {
 	SchemeBuilder.Register(&IamRoleServiceAccount{}, &IamRoleServiceAccountList{})
+}
+
+// AwsIamRoleName returns the name of iam role in aws account
+func (i *IamRoleServiceAccount) AwsIamRoleName(prefix, cluster string) string {
+	return fmt.Sprintf("%s-%s-%s-%s", prefix, cluster, i.GetNamespace(), i.GetName())
 }

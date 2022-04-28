@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 
+	gerrors "github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -35,7 +36,9 @@ type IamRoleServiceAccountReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 
-	IamRoleClient aws.IamRoleClient
+	IamRolePrefix string
+	ClusterName   string
+	IamRoleClient *aws.IamClient
 }
 
 //+kubebuilder:rbac:groups=irsa.domc.me,resources=iamroleserviceaccounts,verbs=get;list;watch;create;update;patch;delete
@@ -71,7 +74,7 @@ func (r *IamRoleServiceAccountReconciler) Reconcile(ctx context.Context, req ctr
 	// check whether irsa has been deleted
 	if irsa.ObjectMeta.DeletionTimestamp.IsZero() {
 		// irsa has not been deleted, add finalizer to irsa
-		updated, err := r.finalizer(ctx, irsa, false)
+		updated, err := r.finalize(ctx, irsa, false)
 		if err != nil {
 			l.Error(err, "Update finalizer failed")
 			return ctrl.Result{}, err
@@ -88,7 +91,7 @@ func (r *IamRoleServiceAccountReconciler) Reconcile(ctx context.Context, req ctr
 		}
 	} else {
 		// irsa is being deleted
-		if _, err := r.finalizer(ctx, irsa, true); err != nil {
+		if _, err := r.finalize(ctx, irsa, true); err != nil {
 			l.Error(err, "Delete aws iam role failed", irsa.Status.RoleArn)
 			return ctrl.Result{}, err
 		}
@@ -120,13 +123,12 @@ func (r *IamRoleServiceAccountReconciler) reconcile(ctx context.Context, irsa *i
 	// creating iam role
 	if irsa.Status.Condition == irsav1alpha1.IrsaPending {
 		l.Info("pending")
-		arn, err := r.IamRoleClient.Create(ctx)
+		err := r.createExternalResources(ctx, irsa)
 		if err != nil {
 			irsa.Status.Reason = err.Error()
 			r.updateConditionStatus(ctx, irsa, irsav1alpha1.IrsaFailed)
 			return err
 		}
-		irsa.Status.RoleArn = arn
 		r.updateConditionStatus(ctx, irsa, irsav1alpha1.IrsaOK)
 		return nil
 	}
@@ -134,7 +136,7 @@ func (r *IamRoleServiceAccountReconciler) reconcile(ctx context.Context, irsa *i
 	return nil
 }
 
-func (r *IamRoleServiceAccountReconciler) finalizer(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount, deleted bool) (bool, error) {
+func (r *IamRoleServiceAccountReconciler) finalize(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount, deleted bool) (bool, error) {
 	myFinalizerName := "iamRole.finalizer.irsa.domc.me"
 	l := log.FromContext(ctx)
 	updated := true
@@ -158,10 +160,29 @@ func (r *IamRoleServiceAccountReconciler) finalizer(ctx context.Context, irsa *i
 	return updated, nil
 }
 
+func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount) error {
+	// determine the role
+	arn := irsa.Spec.RoleName
+	var err error
+	if arn == "" {
+		arn, err = r.IamRoleClient.Create(ctx, irsa)
+		// TODO: if role already exists, check its tags, if its tag contains `irsa: y` , update it. Else return error
+		if err != nil {
+			return gerrors.Wrap(err, "Create iam role failed")
+		}
+	} else {
+		// update its trust entities
+	}
+	// r.IamRoleClient.Create()
+	irsa.Status.RoleArn = arn
+
+	return nil
+}
+
 func (r *IamRoleServiceAccountReconciler) deleteExternalResources(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount) error {
 	l := log.FromContext(ctx)
 	// check if need to delete aws iam role
-	if irsa.Spec.ARN != "" {
+	if irsa.Spec.RoleName != "" {
 		l.V(5).Info("ARN is specified in spec, no need to delete")
 		return nil
 	}

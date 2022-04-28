@@ -50,9 +50,11 @@ func init() {
 }
 
 func main() {
+	var iamRolePrefix string
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	flag.StringVar(&iamRolePrefix, "iam-role-prefix", "irsa-controller", "The prefix of the iam role created by irsa-controller.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
@@ -82,7 +84,8 @@ func main() {
 	if err = (&controllers.IamRoleServiceAccountReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
-		IamRoleClient: &aws.Client{},
+		IamRolePrefix: iamRolePrefix,
+		IamRoleClient: &aws.IamClient{},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "IamRoleServiceAccount")
 		os.Exit(1)
