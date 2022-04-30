@@ -65,17 +65,17 @@ type IamRoleServiceAccountStatus struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Pending;SaNameConflict;Forbidden;Failed;Progressing;Created
+// +kubebuilder:validation:Enum=Pending;RoleConflict;Forbidden;Failed;Progressing;Created
 type IrsaCondition string
 
 var (
-	IrsaSubmitted      IrsaCondition = ""
-	IrsaPending        IrsaCondition = "Pending"
-	IrsaSaNameConflict IrsaCondition = "SaNameConflict"
-	IrsaForbidden      IrsaCondition = "Forbidden"
-	IrsaFailed         IrsaCondition = "Failed"
-	IrsaProgressing    IrsaCondition = "Progressing"
-	IrsaOK             IrsaCondition = "Created"
+	IrsaSubmitted    IrsaCondition = ""
+	IrsaPending      IrsaCondition = "Pending"
+	IrsaRoleConflict IrsaCondition = "RoleConflict"
+	IrsaForbidden    IrsaCondition = "Forbidden"
+	IrsaFailed       IrsaCondition = "Failed"
+	IrsaProgressing  IrsaCondition = "Progressing"
+	IrsaOK           IrsaCondition = "Created"
 )
 
 //+kubebuilder:object:root=true

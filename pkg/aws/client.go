@@ -25,7 +25,7 @@ func (c *IamClient) Create(ctx context.Context, irsa *v1alpha1.IamRoleServiceAcc
 	if err != nil {
 		return "", errors.Wrap(err, "marshal assume role policy doc failed")
 	}
-	roleName := irsa.AwsIamRoleName(c.prefix, c.clusterName)
+	roleName := c.RoleName(irsa)
 	// create role
 	output, err := c.iamClient.CreateRole(&iam.CreateRoleInput{
 		RoleName:                 aws.String(roleName),
@@ -63,6 +63,10 @@ func (c *IamClient) Create(ctx context.Context, irsa *v1alpha1.IamRoleServiceAcc
 	}
 
 	return createdRoleArn, nil
+}
+
+func (c *IamClient) RoleName(irsa *v1alpha1.IamRoleServiceAccount) string {
+	return irsa.AwsIamRoleName(c.prefix, c.clusterName)
 }
 
 func (c *IamClient) transfer(role *iam.Role, managedPolicies []string, inlinePolicy *iam.PolicyDetail) (*IamRole, error) {

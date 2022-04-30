@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 
 	gerrors "github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -116,22 +117,42 @@ func (r *IamRoleServiceAccountReconciler) reconcile(ctx context.Context, irsa *i
 
 	// irsa is just created
 	if irsa.Status.Condition == irsav1alpha1.IrsaSubmitted {
+		l.Info("Irsa is submitted, begin to reconcile")
 		r.updateConditionStatus(ctx, irsa, irsav1alpha1.IrsaPending)
 		return nil
 	}
 
-	// creating iam role
+	// check before createing
 	if irsa.Status.Condition == irsav1alpha1.IrsaPending {
-		l.Info("pending")
+		l.Info("Checking before creating iam role in aws account")
+		status, err := r.checkExternalResources(ctx, irsa)
+		if err != nil {
+			irsa.Status.Reason = err.Error()
+		}
+		r.updateConditionStatus(ctx, irsa, status)
+		return gerrors.Wrap(err, "Check iam role failed when irsa is pending")
+	}
+
+	// init irsa and iam role
+	if irsa.Status.Condition == irsav1alpha1.IrsaProgressing {
+		l.Info("Creating iam role in aws account")
 		err := r.createExternalResources(ctx, irsa)
 		if err != nil {
 			irsa.Status.Reason = err.Error()
+			// set to failed, and update detail status in next reconcile
 			r.updateConditionStatus(ctx, irsa, irsav1alpha1.IrsaFailed)
-			return err
+			return gerrors.Wrap(err, "Init iam role failed when irsa is in progress")
 		}
 		r.updateConditionStatus(ctx, irsa, irsav1alpha1.IrsaOK)
 		return nil
 	}
+
+	// if role is not successfully
+	if irsa.Status.Condition != irsav1alpha1.IrsaOK {
+
+	}
+
+	l.Info("The status of irsa has been synced")
 
 	return nil
 }
@@ -158,6 +179,19 @@ func (r *IamRoleServiceAccountReconciler) finalize(ctx context.Context, irsa *ir
 	}
 	updated = false
 	return updated, nil
+}
+
+func (r *IamRoleServiceAccountReconciler) checkExternalResources(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount) (irsav1alpha1.IrsaCondition, error) {
+	role, err := r.IamRoleClient.Get(ctx, r.IamRoleClient.RoleName(irsa))
+	if err != nil {
+		// TODO: Distinguish between roles because they don't exist and because they don't have permissions
+		return irsav1alpha1.IrsaForbidden, err
+	}
+	// check whether role is managed by irsa
+	if role != nil && !role.IsManagedByIrsaController() {
+		return irsav1alpha1.IrsaRoleConflict, fmt.Errorf("Iam role is not managed by irsa controller")
+	}
+	return irsav1alpha1.IrsaProgressing, nil
 }
 
 func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount) error {
