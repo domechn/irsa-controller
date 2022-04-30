@@ -11,13 +11,21 @@ type StatementEffect string
 const (
 	StatementAllow StatementEffect = "Allow"
 	StatementDeny  StatementEffect = "Deny"
+
+	AssumeRoleWithWebIdentityAction = "sts:AssumeRoleWithWebIdentity"
 )
 
 type IamRole struct {
 	RoleArn         string
-	InlinePolicy    RoleDocument
+	InlinePolicy    *RoleDocument
 	ManagedPolicies []string
-	TrustEntities   []TrustEntity
+	TrustEntity     *TrustEntity
+	Tags            map[string]string
+}
+
+func (i *IamRole) IsManagedByIrsaController() bool {
+
+	return false
 }
 
 type RoleDocument struct {
@@ -29,29 +37,35 @@ type RoleStatement struct {
 	Effect    StatementEffect
 	Principal struct {
 		Federated string
-	} `json:"Principal"`
+	}
 	Action    string
 	Condition struct {
 		StringEquals map[string]string
 	}
 }
 
-type TrustEntity struct {
+type TrustEntity RoleDocument
+
+func (t *TrustEntity) IsAllowOIDC(oidcProviderArn, namespace, serviceAccountName string) bool {
+	if t == nil {
+		return false
+	}
+	for _, st := range t.Statement {
+		if st.Action == AssumeRoleWithWebIdentityAction && st.Principal.Federated == oidcProviderArn {
+			if val := st.Condition.StringEquals[fmt.Sprintf("%s:sub", getIssuerHostpath(oidcProviderArn))]; val == fmt.Sprintf("system:serviceaccount:%s:%s", namespace, serviceAccountName) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func NewAssumeRolePolicyDoc(namespace, serviceAccountName, oidcProviderArn string) (string, error) {
 	// resource : https://aws.amazon.com/blogs/opensource/introducing-fine-grained-iam-roles-service-accounts
 
-	// we extract the issuerHostpath from the oidcProviderARN (needed in the condition field)
-	issuerHostpath := oidcProviderArn
-	submatches := regexp.MustCompile(`(?s)/(.*)`).FindStringSubmatch(issuerHostpath)
-	if len(submatches) == 2 {
-		issuerHostpath = submatches[1]
-	}
-
 	// then create the json formatted Trust policy
 	bytes, err := json.Marshal(
-		RoleDocument{
+		TrustEntity{
 			Version: "2012-10-17",
 			Statement: []RoleStatement{
 				{
@@ -59,12 +73,13 @@ func NewAssumeRolePolicyDoc(namespace, serviceAccountName, oidcProviderArn strin
 					Principal: struct{ Federated string }{
 						Federated: string(oidcProviderArn),
 					},
-					Action: "sts:AssumeRoleWithWebIdentity",
+					Action: AssumeRoleWithWebIdentityAction,
 					Condition: struct {
 						StringEquals map[string]string
 					}{
 						StringEquals: map[string]string{
-							fmt.Sprintf("%s:sub", issuerHostpath): fmt.Sprintf("system:serviceaccount:%s:%s", namespace, serviceAccountName)},
+							fmt.Sprintf("%s:sub", getIssuerHostpath(oidcProviderArn)): fmt.Sprintf("system:serviceaccount:%s:%s", namespace, serviceAccountName),
+						},
 					},
 				},
 			},
@@ -75,4 +90,14 @@ func NewAssumeRolePolicyDoc(namespace, serviceAccountName, oidcProviderArn strin
 	}
 
 	return string(bytes), nil
+}
+
+func getIssuerHostpath(oidcProviderArn string) string {
+	// we extract the issuerHostpath from the oidcProviderARN (needed in the condition field)
+	issuerHostpath := oidcProviderArn
+	submatches := regexp.MustCompile(`(?s)/(.*)`).FindStringSubmatch(issuerHostpath)
+	if len(submatches) == 2 {
+		issuerHostpath = submatches[1]
+	}
+	return issuerHostpath
 }

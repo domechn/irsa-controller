@@ -36,13 +36,10 @@ type IamRoleServiceAccountSpec struct {
 	RoleName string `json:"roleName,omitempty"`
 
 	// +optional
-	ManagedPolicies []ManagedPolicySpec `json:"managedPolicies"`
+	ManagedPolicies []string `json:"managedPolicies"`
 	// +optional
 	InlinePolicy *InlinePolicySpec `json:"inlinePolicy"`
 }
-
-// ManagedPolicySpec defines the policies manged by aws
-type ManagedPolicySpec []string
 
 // InlinePolicySpec defines the policy create within iam role
 type InlinePolicySpec struct {

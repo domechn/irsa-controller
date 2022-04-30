@@ -162,18 +162,32 @@ func (r *IamRoleServiceAccountReconciler) finalize(ctx context.Context, irsa *ir
 
 func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount) error {
 	// determine the role
-	arn := irsa.Spec.RoleName
+	roleName := irsa.Spec.RoleName
+	var arn string
 	var err error
-	if arn == "" {
+	if roleName == "" {
 		arn, err = r.IamRoleClient.Create(ctx, irsa)
 		// TODO: if role already exists, check its tags, if its tag contains `irsa: y` , update it. Else return error
 		if err != nil {
+			// if role has been created, set it into status
+			irsa.Status.RoleArn = arn
 			return gerrors.Wrap(err, "Create iam role failed")
 		}
 	} else {
 		// update its trust entities
+		role, err := r.IamRoleClient.Get(ctx, roleName)
+		arn = role.RoleArn
+		if err != nil {
+			return gerrors.Wrap(err, "Get iam role failed")
+		}
+		oidc := ""
+		if !role.TrustEntity.IsAllowOIDC(oidc, irsa.GetNamespace(), irsa.GetName()) {
+			if err := r.IamRoleClient.AllowServiceAccountAccess(ctx, role, oidc, irsa.GetNamespace(), irsa.GetName()); err != nil {
+				return gerrors.Wrap(err, "Allow sa access iam role failed")
+			}
+		}
+
 	}
-	// r.IamRoleClient.Create()
 	irsa.Status.RoleArn = arn
 
 	return nil
