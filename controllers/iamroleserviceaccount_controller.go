@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	gerrors "github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -30,6 +31,10 @@ import (
 	irsav1alpha1 "domc.me/irsa-controller/api/v1alpha1"
 	"domc.me/irsa-controller/pkg/aws"
 	"domc.me/irsa-controller/pkg/utils/slices"
+)
+
+var (
+	ErrIamRoleNotCreated = gerrors.New("Iam role has not been created")
 )
 
 // IamRoleServiceAccountReconciler reconciles a IamRoleServiceAccount object
@@ -118,7 +123,7 @@ func (r *IamRoleServiceAccountReconciler) reconcile(ctx context.Context, irsa *i
 	// irsa is just created
 	if irsa.Status.Condition == irsav1alpha1.IrsaSubmitted {
 		l.Info("Irsa is submitted, begin to reconcile")
-		r.updateConditionStatus(ctx, irsa, irsav1alpha1.IrsaPending)
+		r.updateIrsaStatus(ctx, irsa, irsav1alpha1.IrsaPending, nil)
 		return nil
 	}
 
@@ -129,7 +134,7 @@ func (r *IamRoleServiceAccountReconciler) reconcile(ctx context.Context, irsa *i
 		if err != nil {
 			irsa.Status.Reason = err.Error()
 		}
-		r.updateConditionStatus(ctx, irsa, status)
+		r.updateIrsaStatus(ctx, irsa, status, err)
 		return gerrors.Wrap(err, "Check iam role failed when irsa is pending")
 	}
 
@@ -138,18 +143,30 @@ func (r *IamRoleServiceAccountReconciler) reconcile(ctx context.Context, irsa *i
 		l.Info("Creating iam role in aws account")
 		err := r.createExternalResources(ctx, irsa)
 		if err != nil {
-			irsa.Status.Reason = err.Error()
 			// set to failed, and update detail status in next reconcile
-			r.updateConditionStatus(ctx, irsa, irsav1alpha1.IrsaFailed)
+			r.updateIrsaStatus(ctx, irsa, irsav1alpha1.IrsaFailed, err)
 			return gerrors.Wrap(err, "Init iam role failed when irsa is in progress")
 		}
-		r.updateConditionStatus(ctx, irsa, irsav1alpha1.IrsaOK)
+		r.updateIrsaStatus(ctx, irsa, irsav1alpha1.IrsaOK, nil)
 		return nil
 	}
 
-	// if role is not successfully
-	if irsa.Status.Condition != irsav1alpha1.IrsaOK {
+	// role has been reconciled
+	roleArn := irsa.Status.RoleArn
+	// role has not been created
+	if roleArn == "" {
+		l.Info("Creating iam role in aws account again")
+		err := r.createExternalResources(ctx, irsa)
+		if err != nil {
+			r.updateIrsaStatus(ctx, irsa, irsav1alpha1.IrsaFailed, err)
+			return gerrors.Wrap(err, "Reconcile irsa failed")
+		}
+	}
 
+	err := r.updateExternalResourcesIfNeed(ctx, irsa)
+	if err != nil {
+		r.updateIrsaStatus(ctx, irsa, irsav1alpha1.IrsaFailed, err)
+		return err
 	}
 
 	l.Info("The status of irsa has been synced")
@@ -197,32 +214,53 @@ func (r *IamRoleServiceAccountReconciler) checkExternalResources(ctx context.Con
 func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount) error {
 	// determine the role
 	roleName := irsa.Spec.RoleName
-	var arn string
+	var roleArn string
 	var err error
 	if roleName == "" {
-		arn, err = r.IamRoleClient.Create(ctx, irsa)
+		roleArn, err = r.IamRoleClient.Create(ctx, irsa)
 		// TODO: if role already exists, check its tags, if its tag contains `irsa: y` , update it. Else return error
 		if err != nil {
 			// if role has been created, set it into status
-			irsa.Status.RoleArn = arn
+			irsa.Status.RoleArn = roleArn
 			return gerrors.Wrap(err, "Create iam role failed")
 		}
 	} else {
 		// update its trust entities
 		role, err := r.IamRoleClient.Get(ctx, roleName)
-		arn = role.RoleArn
+		roleArn = role.RoleArn
 		if err != nil {
 			return gerrors.Wrap(err, "Get iam role failed")
 		}
 		oidc := ""
-		if !role.TrustEntity.IsAllowOIDC(oidc, irsa.GetNamespace(), irsa.GetName()) {
+		if !role.AssumeRolePolicy.IsAllowOIDC(oidc, irsa.GetNamespace(), irsa.GetName()) {
 			if err := r.IamRoleClient.AllowServiceAccountAccess(ctx, role, oidc, irsa.GetNamespace(), irsa.GetName()); err != nil {
 				return gerrors.Wrap(err, "Allow sa access iam role failed")
 			}
 		}
 
 	}
-	irsa.Status.RoleArn = arn
+	irsa.Status.RoleArn = roleArn
+
+	return nil
+}
+
+func (r *IamRoleServiceAccountReconciler) updateExternalResourcesIfNeed(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount) error {
+	roleArn := irsa.Status.RoleArn
+	if roleArn == "" {
+		return ErrIamRoleNotCreated
+	}
+	gotRole, err := r.IamRoleClient.Get(ctx, aws.RoleNameByArn(roleArn))
+
+	if err != nil {
+		return gerrors.Wrap(err, "Get iam role by arn failed")
+	}
+
+	wantRole := aws.NewIamRole(irsa)
+
+	// compare spec and iam role detail
+	if !reflect.DeepEqual(gotRole, wantRole) {
+
+	}
 
 	return nil
 }
@@ -243,13 +281,25 @@ func (r *IamRoleServiceAccountReconciler) deleteExternalResources(ctx context.Co
 	return r.IamRoleClient.Delete(ctx, roleArn)
 }
 
-func (r *IamRoleServiceAccountReconciler) updateConditionStatus(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount, condition irsav1alpha1.IrsaCondition) error {
+func (r *IamRoleServiceAccountReconciler) updateIrsaStatus(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount, condition irsav1alpha1.IrsaCondition, reconcileErr error) error {
 	l := log.FromContext(ctx)
 	from := irsa.Status.Condition
+	if reconcileErr != nil {
+		irsa.Status.Reason = reconcileErr.Error()
+	}
 	irsa.Status.Condition = condition
 	err := r.Status().Update(ctx, irsa)
 	if err != nil {
 		l.Error(err, "Update status failed", "from", from, "to", condition)
 	}
 	return err
+}
+
+func (r *IamRoleServiceAccountReconciler) compareIrsaDetailAndRoleDetail(irsa *irsav1alpha1.IamRoleServiceAccount, role *aws.IamRole) (bool, error) {
+	// check managed policies
+	if !slices.Equal(role.ManagedPolicies, irsa.Spec.ManagedPolicies) {
+		return false, nil
+	}
+
+	return false, nil
 }

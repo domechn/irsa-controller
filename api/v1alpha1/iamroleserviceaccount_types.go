@@ -43,14 +43,19 @@ type IamRoleServiceAccountSpec struct {
 
 // InlinePolicySpec defines the policy create within iam role
 type InlinePolicySpec struct {
+	Version    string          `json:"version"`
 	Statements []StatementSpec `json:"statements"`
 }
+
+type StatementConditionSpec map[string]map[string]string
 
 type StatementSpec struct {
 	Resource []string `json:"resource"`
 	Action   []string `json:"action"`
 	// +kubebuilder:validation:Enum=Allow;Deny
 	Effect string `json:"effect"`
+	// +optional
+	Condition StatementConditionSpec `json:"condition"`
 }
 
 // IamRoleServiceAccountStatus defines the observed state of IamRoleServiceAccount
