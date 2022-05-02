@@ -16,9 +16,10 @@ const (
 	StatementDeny  StatementEffect = "Deny"
 
 	AssumeRoleWithWebIdentityAction = "sts:AssumeRoleWithWebIdentity"
-	// IrsaContollerManagedTag is a fixed tag key, if tag value is "y"
+	// IrsaContollerManagedTagKey is a fixed tag key, if tag value is "y"
 	// means this iam role is manged by irsa-controller
-	IrsaContollerManagedTag = "irsa-controller"
+	IrsaContollerManagedTagKey = "irsa-controller"
+	IrsaContollerManagedTagVal = "y"
 )
 
 type IamRole struct {
@@ -34,8 +35,8 @@ type IamRole struct {
 }
 
 func (i *IamRole) IsManagedByIrsaController() bool {
-	if val, ok := i.Tags[IrsaContollerManagedTag]; ok {
-		return val == "y"
+	if val, ok := i.Tags[IrsaContollerManagedTagKey]; ok {
+		return val == IrsaContollerManagedTagVal
 	}
 
 	return false
@@ -65,7 +66,7 @@ func (i *IamRole) fromIRSA(irsa *irsav1alpha1.IamRoleServiceAccount) {
 	}
 
 	// todo: update oidc arn
-	arp := newAssumeRolePolicy(irsa.GetNamespace(), irsa.GetName(), "")
+	arp := NewAssumeRolePolicy("", irsa.GetNamespace(), irsa.GetName())
 	i.AssumeRolePolicy = &arp
 
 }
@@ -139,11 +140,11 @@ func (t *AssumeRoleDocument) IsAllowOIDC(oidcProviderArn, namespace, serviceAcco
 	return false
 }
 
-func NewAssumeRolePolicyDoc(namespace, serviceAccountName, oidcProviderArn string) (string, error) {
+func NewAssumeRolePolicyDoc(oidcProviderArn, namespace, serviceAccountName string) (string, error) {
 	// resource : https://aws.amazon.com/blogs/opensource/introducing-fine-grained-iam-roles-service-accounts
 
 	// then create the json formatted Trust policy
-	bytes, err := json.Marshal(newAssumeRolePolicy(namespace, serviceAccountName, oidcProviderArn))
+	bytes, err := json.Marshal(NewAssumeRolePolicy(oidcProviderArn, namespace, serviceAccountName))
 	if err != nil {
 		return "", err
 	}
@@ -151,7 +152,7 @@ func NewAssumeRolePolicyDoc(namespace, serviceAccountName, oidcProviderArn strin
 	return string(bytes), nil
 }
 
-func newAssumeRolePolicy(namespace, serviceAccountName, oidcProviderArn string) AssumeRoleDocument {
+func NewAssumeRolePolicy(oidcProviderArn, namespace, serviceAccountName string) AssumeRoleDocument {
 	// resource : https://aws.amazon.com/blogs/opensource/introducing-fine-grained-iam-roles-service-accounts
 
 	// then create the json formatted Trust policy

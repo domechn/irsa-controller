@@ -7,37 +7,53 @@ import (
 
 	"domc.me/irsa-controller/api/v1alpha1"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/pkg/errors"
 )
 
 type IamClient struct {
-	prefix       string
-	clusterName  string
-	tags         map[string]string
-	oidcProvider string
-	iamClient    iamiface.IAMAPI
+	prefix         string
+	clusterName    string
+	additionalTags map[string]string
+	iamClient      iamiface.IAMAPI
 }
 
-// Create returns arn of created role
-func (c *IamClient) Create(ctx context.Context, irsa *v1alpha1.IamRoleServiceAccount) (string, error) {
+func NewIamClient(clusterName, iamRolePrefix string) *IamClient {
+	awsconf := aws.NewConfig()
+	session := session.New()
+	// client.New(aws.NewConfig(), info metadata.ClientInfo, handlers request.Handlers, options ...func(*client.Client))
+	return &IamClient{
+		prefix:      iamRolePrefix,
+		clusterName: clusterName,
+		iamClient:   iam.New(session, awsconf),
+		// TODO: update tags
+		additionalTags: make(map[string]string),
+	}
+}
+
+// Create creates aws iam role in aws account and attaches managed policies arn to role
+// also create inline policy if defined in irsa
+// returns arn of aws iam role and arn of inline policy if inline policy is created
+func (c *IamClient) Create(ctx context.Context, irsa *v1alpha1.IamRoleServiceAccount) (string, string, error) {
 
 	iamRole := NewIamRole(irsa)
 
 	assumeRoleDocument, err := iamRole.AssumeRolePolicy.AssumeRoleDocumentPolicyDocument()
 	if err != nil {
-		return "", errors.Wrap(err, "marshal assume role policy doc failed")
+		return "", "", errors.Wrap(err, "Marshal assume role policy doc failed")
 	}
 
 	roleName := c.RoleName(irsa)
 	// create role
-	output, err := c.iamClient.CreateRole(&iam.CreateRoleInput{
+	output, err := c.iamClient.CreateRoleWithContext(ctx, &iam.CreateRoleInput{
 		RoleName:                 aws.String(roleName),
 		AssumeRolePolicyDocument: aws.String(assumeRoleDocument),
+		Tags:                     c.getIamRoleTags(),
 	})
 	if err != nil {
-		return "", errors.Wrap(err, "create role in aws failed")
+		return "", "", errors.Wrap(err, "Create role in aws failed")
 	}
 
 	createdRoleArn := *output.Role.Arn
@@ -46,37 +62,101 @@ func (c *IamClient) Create(ctx context.Context, irsa *v1alpha1.IamRoleServiceAcc
 	inlinePolicyArn := ""
 	pd, err := iamRole.InlinePolicy.RoleDocumentPolicyDocument()
 	if err != nil {
-		return "", errors.Wrap(err, "create inline policy in aws failed")
+		return "", "", errors.Wrap(err, "Create inline policy in aws failed")
 	}
 	if iamRole.InlinePolicy != nil {
-		policyOutput, err := c.iamClient.CreatePolicy(&iam.CreatePolicyInput{
+		policyOutput, err := c.iamClient.CreatePolicyWithContext(ctx, &iam.CreatePolicyInput{
 			PolicyName:     aws.String(c.getInlinePolicyName(roleName)),
 			PolicyDocument: aws.String(pd),
 		})
 		if err != nil {
-			return createdRoleArn, errors.Wrap(err, "Create inline policy")
+			return createdRoleArn, inlinePolicyArn, errors.Wrap(err, "Create inline policy")
 		}
 		inlinePolicyArn = *policyOutput.Policy.Arn
 	}
 
 	// append managed policies and inline policy into role
-	for _, pa := range append(iamRole.ManagedPolicies, inlinePolicyArn) {
-		if pa == "" {
-			continue
-		}
-		if _, err := c.iamClient.AttachRolePolicy(&iam.AttachRolePolicyInput{
-			RoleName:  aws.String(roleName),
-			PolicyArn: aws.String(pa),
-		}); err != nil {
-			return createdRoleArn, errors.Wrap(err, "Attach managedPolicy failed")
-		}
+	if err := c.AttachRolePolicy(ctx, roleName, append(iamRole.ManagedPolicies, inlinePolicyArn)); err != nil {
+		return createdRoleArn, inlinePolicyArn, errors.Wrap(err, "Attach managed policies failed")
 	}
 
-	return createdRoleArn, nil
+	return createdRoleArn, inlinePolicyArn, nil
 }
 
 func (c *IamClient) RoleName(irsa *v1alpha1.IamRoleServiceAccount) string {
 	return irsa.AwsIamRoleName(c.prefix, c.clusterName)
+}
+
+func (c *IamClient) AttachRolePolicy(ctx context.Context, roleName string, polices []string) error {
+	for _, policyArn := range polices {
+		if policyArn == "" {
+			continue
+		}
+		if _, err := c.iamClient.AttachRolePolicyWithContext(ctx, &iam.AttachRolePolicyInput{
+			RoleName:  aws.String(roleName),
+			PolicyArn: aws.String(policyArn),
+		}); err != nil {
+			return errors.Wrap(err, "Attach role policy failed")
+		}
+	}
+	return nil
+}
+
+func (c *IamClient) DeAttachRolePolicy(ctx context.Context, roleName string, polices []string) error {
+	for _, policyArn := range polices {
+		if policyArn == "" {
+			continue
+		}
+		if _, err := c.iamClient.DeleteRolePolicyWithContext(ctx, &iam.DeleteRolePolicyInput{
+			RoleName: aws.String(roleName),
+			// TODO: fix get policy name by arn
+			PolicyName: aws.String(RoleNameByArn(policyArn)),
+		}); err != nil {
+			return errors.Wrap(err, "DeAttach role policy failed")
+		}
+	}
+	return nil
+}
+
+func (c *IamClient) UpdateAssumePolicy(ctx context.Context, roleName string, assumePolicy *AssumeRoleDocument) error {
+	doc, err := assumePolicy.AssumeRoleDocumentPolicyDocument()
+	if err != nil {
+		return errors.Wrap(err, "Marshal aasume policy failed")
+	}
+	_, err = c.iamClient.UpdateAssumeRolePolicyWithContext(ctx, &iam.UpdateAssumeRolePolicyInput{
+		RoleName:       aws.String(roleName),
+		PolicyDocument: aws.String(doc),
+	})
+	if err != nil {
+		return errors.Wrap(err, "Update assume role policy failed")
+	}
+	return nil
+}
+
+func (c *IamClient) UpdateTags(ctx context.Context, roleName string, tags map[string]string) error {
+	fixedTags := c.getIamRoleTags()
+	for k, v := range tags {
+		fixedTags = append(fixedTags, &iam.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+	// TODO: update tags to aws iam role
+	return nil
+}
+
+func (c *IamClient) UpdatePolicy(ctx context.Context, policyArn string, policy *RoleDocument) error {
+	policyDocument, err := policy.RoleDocumentPolicyDocument()
+	if err != nil {
+		return errors.Wrap(err, "Update policy failed")
+	}
+
+	_, err = c.iamClient.CreatePolicyVersionWithContext(ctx, &iam.CreatePolicyVersionInput{
+		PolicyArn:      aws.String(policyArn),
+		PolicyDocument: aws.String(policyDocument),
+		SetAsDefault:   aws.Bool(true),
+	})
+	return errors.Wrap(err, "Update policy failed")
 }
 
 func (c *IamClient) transfer(role *iam.Role, managedPolicies []string, inlinePolicy *iam.PolicyDetail) (*IamRole, error) {
@@ -112,7 +192,7 @@ func (c *IamClient) transfer(role *iam.Role, managedPolicies []string, inlinePol
 }
 
 func (c *IamClient) Get(ctx context.Context, roleName string) (*IamRole, error) {
-	output, err := c.iamClient.GetRole(&iam.GetRoleInput{
+	output, err := c.iamClient.GetRoleWithContext(ctx, &iam.GetRoleInput{
 		RoleName: aws.String(roleName),
 	})
 	if err != nil {
@@ -135,4 +215,17 @@ func (c *IamClient) Delete(ctx context.Context, roleArn string) error {
 
 func (c *IamClient) getInlinePolicyName(roleName string) string {
 	return fmt.Sprintf("%s-inline-policy", roleName)
+}
+
+func (c *IamClient) getIamRoleTags() []*iam.Tag {
+	var res []*iam.Tag
+	// fixed key value: managed by irsa-controller
+	c.additionalTags[IrsaContollerManagedTagKey] = IrsaContollerManagedTagVal
+	for k, v := range c.additionalTags {
+		res = append(res, &iam.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+	return res
 }

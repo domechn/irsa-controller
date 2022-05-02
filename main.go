@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -40,6 +41,8 @@ import (
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
+
+	syncPeriod = time.Hour * 1
 )
 
 func init() {
@@ -51,10 +54,13 @@ func init() {
 
 func main() {
 	var iamRolePrefix string
+	var clusterName string
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
 	flag.StringVar(&iamRolePrefix, "iam-role-prefix", "irsa-controller", "The prefix of the iam role created by irsa-controller.")
+	flag.StringVar(&clusterName, "cluster-name", "cluster", "The name of the kubernetes cluster irsa-controller runs on.")
+
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
@@ -73,6 +79,7 @@ func main() {
 		MetricsBindAddress:     metricsAddr,
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
+		SyncPeriod:             &syncPeriod,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "540024c5.domc.me",
 	})
@@ -85,7 +92,8 @@ func main() {
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
 		IamRolePrefix: iamRolePrefix,
-		IamRoleClient: &aws.IamClient{},
+		ClusterName:   clusterName,
+		IamRoleClient: aws.NewIamClient(clusterName, iamRolePrefix),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "IamRoleServiceAccount")
 		os.Exit(1)
