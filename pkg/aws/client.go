@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"domc.me/irsa-controller/api/v1alpha1"
 	"github.com/aws/aws-sdk-go/aws"
@@ -20,17 +21,28 @@ type IamClient struct {
 	iamClient      iamiface.IAMAPI
 }
 
-func NewIamClient(clusterName, iamRolePrefix string) *IamClient {
+func NewIamClient(clusterName, iamRolePrefix string, additionalTagsArgs []string) *IamClient {
 	awsconf := aws.NewConfig()
 	session := session.New()
 	// client.New(aws.NewConfig(), info metadata.ClientInfo, handlers request.Handlers, options ...func(*client.Client))
 	return &IamClient{
-		prefix:      iamRolePrefix,
-		clusterName: clusterName,
-		iamClient:   iam.New(session, awsconf),
-		// TODO: update tags
-		additionalTags: make(map[string]string),
+		prefix:         iamRolePrefix,
+		clusterName:    clusterName,
+		iamClient:      iam.New(session, awsconf),
+		additionalTags: parseAdditionalTagsArgs(additionalTagsArgs),
 	}
+}
+
+func parseAdditionalTagsArgs(args []string) map[string]string {
+	at := make(map[string]string)
+	for _, arg := range args {
+		if !strings.Contains(arg, "=") {
+			continue
+		}
+		splits := strings.SplitN(arg, "=", 2)
+		at[splits[0]] = splits[1]
+	}
+	return at
 }
 
 // Create creates aws iam role in aws account and attaches managed policies arn to role
@@ -121,7 +133,7 @@ func (c *IamClient) DeAttachRolePolicy(ctx context.Context, roleName string, pol
 func (c *IamClient) UpdateAssumePolicy(ctx context.Context, roleName string, assumePolicy *AssumeRoleDocument) error {
 	doc, err := assumePolicy.AssumeRoleDocumentPolicyDocument()
 	if err != nil {
-		return errors.Wrap(err, "Marshal aasume policy failed")
+		return errors.Wrap(err, "Marshal assume policy failed")
 	}
 	_, err = c.iamClient.UpdateAssumeRolePolicyWithContext(ctx, &iam.UpdateAssumeRolePolicyInput{
 		RoleName:       aws.String(roleName),
@@ -134,14 +146,21 @@ func (c *IamClient) UpdateAssumePolicy(ctx context.Context, roleName string, ass
 }
 
 func (c *IamClient) UpdateTags(ctx context.Context, roleName string, tags map[string]string) error {
-	fixedTags := c.getIamRoleTags()
+	// append fixed tags setten in controller started
+	irts := c.getIamRoleTags()
 	for k, v := range tags {
-		fixedTags = append(fixedTags, &iam.Tag{
+		irts = append(irts, &iam.Tag{
 			Key:   aws.String(k),
 			Value: aws.String(v),
 		})
 	}
-	// TODO: update tags to aws iam role
+	_, err := c.iamClient.TagRole(&iam.TagRoleInput{
+		RoleName: aws.String(roleName),
+		Tags:     irts,
+	})
+	if err != nil {
+		return errors.Wrap(err, "Tag iam role failed")
+	}
 	return nil
 }
 

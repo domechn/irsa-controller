@@ -52,14 +52,27 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
+type arrayFlags []string
+
+func (i *arrayFlags) String() string {
+	return "my string representation"
+}
+
+func (i *arrayFlags) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+
 func main() {
 	var iamRolePrefix string
 	var clusterName string
+	var additionTagsArgs arrayFlags
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
 	flag.StringVar(&iamRolePrefix, "iam-role-prefix", "irsa-controller", "The prefix of the iam role created by irsa-controller.")
 	flag.StringVar(&clusterName, "cluster-name", "cluster", "The name of the kubernetes cluster irsa-controller runs on.")
+	flag.Var(&additionTagsArgs, "additional-tags", "The additional tags of iam role in aws created by irsa-controller.")
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -93,7 +106,7 @@ func main() {
 		Scheme:        mgr.GetScheme(),
 		IamRolePrefix: iamRolePrefix,
 		ClusterName:   clusterName,
-		IamRoleClient: aws.NewIamClient(clusterName, iamRolePrefix),
+		IamRoleClient: aws.NewIamClient(clusterName, iamRolePrefix, additionTagsArgs),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "IamRoleServiceAccount")
 		os.Exit(1)
