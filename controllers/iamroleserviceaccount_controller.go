@@ -248,7 +248,7 @@ func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Co
 
 	if roleName == "" {
 		roleArn, inlinePolicyArn, err = r.IamRoleClient.Create(ctx, irsa)
-		// TODO: if role already exists, check its tags, if its tag contains `irsa: y` , update it. Else return error
+		// TODO: if role already exists, check its tags, if its tag contains `irsa-controller: y` , update it. Else return error
 		if err != nil {
 			// if role has been created, set it into status
 
@@ -395,7 +395,19 @@ func (r *IamRoleServiceAccountReconciler) deleteExternalResources(ctx context.Co
 		return nil
 	}
 	// clean aws iam role
-	return r.IamRoleClient.Delete(ctx, roleArn)
+	if err := r.IamRoleClient.Delete(ctx, roleArn); err != nil {
+		return gerrors.Wrap(err, "Delete iam role failed")
+	}
+	inlinePolicyArn := irsa.Status.InlinePolicyArn
+	if inlinePolicyArn == nil {
+		l.V(5).Info("Inline policy arn has not been generated, no need to delete")
+		return nil
+	}
+	if err := r.IamRoleClient.Delete(ctx, *inlinePolicyArn); err != nil {
+		return gerrors.Wrap(err, "Delete inline policy failed")
+	}
+	return nil
+
 }
 
 func (r *IamRoleServiceAccountReconciler) updateIrsaStatus(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount, condition irsav1alpha1.IrsaCondition, reconcileErr error) bool {

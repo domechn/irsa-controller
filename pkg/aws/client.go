@@ -204,12 +204,39 @@ func (c *IamClient) Get(ctx context.Context, roleName string) (*IamRole, error) 
 }
 
 func (c *IamClient) AllowServiceAccountAccess(ctx context.Context, role *IamRole, oidcProviderArn, namespace, serviceAccountName string) error {
-	// c.iamClient.Update(*iam.UpdateAssumeRolePolicyInput)
+	policy := NewAssumeRolePolicy(oidcProviderArn, namespace, serviceAccountName)
+	role.AssumeRolePolicy.Statement = append(role.AssumeRolePolicy.Statement, policy.Statement...)
+	doc, err := role.AssumeRolePolicy.AssumeRoleDocumentPolicyDocument()
+	if err != nil {
+		return errors.Wrap(err, "Allow serviceaccount access failed")
+	}
+	_, err = c.iamClient.UpdateAssumeRolePolicyWithContext(ctx, &iam.UpdateAssumeRolePolicyInput{
+		RoleName:       aws.String(role.RoleName),
+		PolicyDocument: aws.String(doc),
+	})
+	if err != nil {
+		return errors.Wrap(err, "Update assume role policy failed")
+	}
 	return nil
 }
 
 func (c *IamClient) Delete(ctx context.Context, roleArn string) error {
+	_, err := c.iamClient.DeleteRole(&iam.DeleteRoleInput{
+		RoleName: aws.String(RoleNameByArn(roleArn)),
+	})
+	if err != nil {
+		return errors.Wrap(err, "Delete iam role failed")
+	}
+	return nil
+}
 
+func (c *IamClient) DeletePolicy(ctx context.Context, policyArn string) error {
+	_, err := c.iamClient.DeletePolicyWithContext(ctx, &iam.DeletePolicyInput{
+		PolicyArn: aws.String(policyArn),
+	})
+	if err != nil {
+		return errors.Wrap(err, "Delete policy failed")
+	}
 	return nil
 }
 
