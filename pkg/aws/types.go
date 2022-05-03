@@ -26,8 +26,9 @@ type IamRole struct {
 	// RoleArn is "" when role is not created
 	RoleArn string
 	// RoleName is "" if RoleArn is ""
-	RoleName        string
-	InlinePolicy    *RoleDocument
+	RoleName     string
+	InlinePolicy *RoleDocument
+	// ManagedPolicies defines the arns of ManagedPolicies
 	ManagedPolicies []string
 	// AssumeRolePolicy defines the trust relationship of iam role
 	AssumeRolePolicy *AssumeRoleDocument

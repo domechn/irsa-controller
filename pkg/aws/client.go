@@ -159,7 +159,7 @@ func (c *IamClient) UpdatePolicy(ctx context.Context, policyArn string, policy *
 	return errors.Wrap(err, "Update policy failed")
 }
 
-func (c *IamClient) transfer(role *iam.Role, managedPolicies []string, inlinePolicy *iam.PolicyDetail) (*IamRole, error) {
+func (c *IamClient) transfer(role *iam.Role, managedPolicyArns []string, inlinePolicy *iam.PolicyDetail) (*IamRole, error) {
 	res := new(IamRole)
 	res.RoleArn = *role.Arn
 	if role.AssumeRolePolicyDocument != nil {
@@ -179,7 +179,7 @@ func (c *IamClient) transfer(role *iam.Role, managedPolicies []string, inlinePol
 			}
 		}
 	}
-	res.ManagedPolicies = managedPolicies
+	res.ManagedPolicies = managedPolicyArns
 	if inlinePolicy != nil && inlinePolicy.PolicyDocument != nil {
 		var docJson RoleDocument
 		err := json.Unmarshal([]byte(*inlinePolicy.PolicyDocument), &docJson)
@@ -196,10 +196,39 @@ func (c *IamClient) Get(ctx context.Context, roleName string) (*IamRole, error) 
 		RoleName: aws.String(roleName),
 	})
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "Get role with context failed")
 	}
-	// TODO: get policies from aws
-	iam, err := c.transfer(output.Role, []string{}, &iam.PolicyDetail{})
+	// TODO: paging if the count of polices over than 100
+	policiesOut, err := c.iamClient.ListAttachedRolePolicies(&iam.ListAttachedRolePoliciesInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "List attached role policies failed")
+	}
+	var managedPolicyArns []string
+	inlinePolicyName := c.getInlinePolicyName(roleName)
+	foundInlinePolicy := false
+	for _, p := range policiesOut.AttachedPolicies {
+		if p.PolicyName != nil && *p.PolicyName == inlinePolicyName {
+			foundInlinePolicy = true
+		} else {
+			managedPolicyArns = append(managedPolicyArns, *p.PolicyArn)
+		}
+	}
+
+	inlinePolicyDetail := new(iam.PolicyDetail)
+	if foundInlinePolicy {
+		ipo, err := c.iamClient.GetRolePolicy(&iam.GetRolePolicyInput{
+			RoleName:   aws.String(roleName),
+			PolicyName: aws.String(inlinePolicyName),
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "Get inline policy failed")
+		}
+		inlinePolicyDetail.PolicyDocument = ipo.PolicyDocument
+		inlinePolicyDetail.PolicyName = ipo.PolicyName
+	}
+	iam, err := c.transfer(output.Role, managedPolicyArns, inlinePolicyDetail)
 	return iam, err
 }
 
