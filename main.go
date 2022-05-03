@@ -66,12 +66,14 @@ func (i *arrayFlags) Set(value string) error {
 func main() {
 	var iamRolePrefix string
 	var clusterName string
+	var oidcProviderArn string
 	var additionTagsArgs arrayFlags
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
 	flag.StringVar(&iamRolePrefix, "iam-role-prefix", "irsa-controller", "The prefix of the iam role created by irsa-controller.")
 	flag.StringVar(&clusterName, "cluster-name", "cluster", "The name of the kubernetes cluster irsa-controller runs on.")
+	flag.StringVar(&oidcProviderArn, "oidc-provider-arn", "", "The ARN of the oidc provider to use.")
 	flag.Var(&additionTagsArgs, "additional-tags", "The additional tags of iam role in aws created by irsa-controller.")
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -104,6 +106,7 @@ func main() {
 	if err = (&controllers.IamRoleServiceAccountReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
+		OIDC:          oidcProviderArn,
 		IamRolePrefix: iamRolePrefix,
 		ClusterName:   clusterName,
 		IamRoleClient: aws.NewIamClient(clusterName, iamRolePrefix, additionTagsArgs),

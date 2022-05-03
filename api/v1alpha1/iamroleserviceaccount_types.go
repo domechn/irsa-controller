@@ -33,8 +33,15 @@ type IamRoleServiceAccountSpec struct {
 	// RoleName defines the name of iam role existing in aws account which irsa will use
 	// if the fields is provided, ManagedPolicies and InlinePolicy will be useless
 	// +optional
+	// +kubebuilder:validation:OneOf
 	RoleName string `json:"roleName,omitempty"`
 
+	// +kubebuilder:validation:OneOf
+	// +optional
+	Policy *PolicySpec `json:"policy,omitempty"`
+}
+
+type PolicySpec struct {
 	// +optional
 	ManagedPolicies []string `json:"managedPolicies"`
 	// +optional

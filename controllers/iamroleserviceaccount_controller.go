@@ -246,7 +246,7 @@ func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Co
 	}()
 
 	if roleName == "" {
-		roleArn, inlinePolicyArn, err = r.IamRoleClient.Create(ctx, irsa)
+		roleArn, inlinePolicyArn, err = r.IamRoleClient.Create(ctx, r.OIDC, irsa)
 		// TODO: if role already exists, check its tags, if its tag contains `irsa-controller: y` , update it. Else return error
 		if err != nil {
 			// if role has been created, set it into status
@@ -288,7 +288,7 @@ func (r *IamRoleServiceAccountReconciler) updateExternalResourcesIfNeed(ctx cont
 		return gerrors.Wrap(err, "Get iam role by arn failed")
 	}
 
-	wantRole := aws.NewIamRole(irsa)
+	wantRole := aws.NewIamRole(r.OIDC, irsa)
 
 	// compare spec and iam role detail
 
@@ -401,7 +401,7 @@ func (r *IamRoleServiceAccountReconciler) deleteExternalResources(ctx context.Co
 		l.V(5).Info("Inline policy arn has not been generated, no need to delete")
 		return nil
 	}
-	if err := r.IamRoleClient.Delete(ctx, *inlinePolicyArn); err != nil {
+	if err := r.IamRoleClient.DeletePolicy(ctx, *inlinePolicyArn); err != nil {
 		return gerrors.Wrap(err, "Delete inline policy failed")
 	}
 	return nil
@@ -425,13 +425,4 @@ func (r *IamRoleServiceAccountReconciler) updateIrsaStatus(ctx context.Context, 
 		l.Error(err, "Update status failed", "from", from, "to", condition)
 	}
 	return err == nil
-}
-
-func (r *IamRoleServiceAccountReconciler) compareIrsaDetailAndRoleDetail(irsa *irsav1alpha1.IamRoleServiceAccount, role *aws.IamRole) (bool, error) {
-	// check managed policies
-	if !slices.Equal(role.ManagedPolicies, irsa.Spec.ManagedPolicies) {
-		return false, nil
-	}
-
-	return false, nil
 }

@@ -48,9 +48,9 @@ func parseAdditionalTagsArgs(args []string) map[string]string {
 // Create creates aws iam role in aws account and attaches managed policies arn to role
 // also create inline policy if defined in irsa
 // returns arn of aws iam role and arn of inline policy if inline policy is created
-func (c *IamClient) Create(ctx context.Context, irsa *v1alpha1.IamRoleServiceAccount) (string, string, error) {
+func (c *IamClient) Create(ctx context.Context, oidcProvider string, irsa *v1alpha1.IamRoleServiceAccount) (string, string, error) {
 
-	iamRole := NewIamRole(irsa)
+	iamRole := NewIamRole(oidcProvider, irsa)
 
 	assumeRoleDocument, err := iamRole.AssumeRolePolicy.AssumeRoleDocumentPolicyDocument()
 	if err != nil {

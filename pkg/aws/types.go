@@ -43,20 +43,23 @@ func (i *IamRole) IsManagedByIrsaController() bool {
 	return false
 }
 
-func NewIamRole(irsa *irsav1alpha1.IamRoleServiceAccount) *IamRole {
+// NewIamRole is used only if the iam role is created by irsa but not be specificed by irsa.roleName
+func NewIamRole(oidcProviderArn string, irsa *irsav1alpha1.IamRoleServiceAccount) *IamRole {
 	iamRole := new(IamRole)
-	iamRole.fromIRSA(irsa)
+	iamRole.fromIRSA(oidcProviderArn, irsa)
 	return iamRole
 }
 
-func (i *IamRole) fromIRSA(irsa *irsav1alpha1.IamRoleServiceAccount) {
+func (i *IamRole) fromIRSA(oidcProviderArn string, irsa *irsav1alpha1.IamRoleServiceAccount) {
 	i.RoleArn = irsa.Status.RoleArn
 	i.RoleName = RoleNameByArn(i.RoleArn)
 
-	i.ManagedPolicies = irsa.Spec.ManagedPolicies
-	if irsa.Spec.InlinePolicy != nil {
-		ip := irsa.Spec.InlinePolicy
-		stses := irsa.Spec.InlinePolicy.Statements
+	policy := irsa.Spec.Policy
+
+	i.ManagedPolicies = policy.ManagedPolicies
+	if policy.InlinePolicy != nil {
+		ip := policy.InlinePolicy
+		stses := policy.InlinePolicy.Statements
 		i.InlinePolicy = &RoleDocument{
 			Version:   ip.Version,
 			Statement: make([]RoleStatement, len(stses)),
@@ -66,8 +69,7 @@ func (i *IamRole) fromIRSA(irsa *irsav1alpha1.IamRoleServiceAccount) {
 		}
 	}
 
-	// todo: update oidc arn
-	arp := NewAssumeRolePolicy("", irsa.GetNamespace(), irsa.GetName())
+	arp := NewAssumeRolePolicy(oidcProviderArn, irsa.GetNamespace(), irsa.GetName())
 	i.AssumeRolePolicy = &arp
 
 }
