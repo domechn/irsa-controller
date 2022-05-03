@@ -23,20 +23,25 @@ import (
 	"time"
 
 	gerrors "github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"domc.me/irsa-controller/api/v1alpha1"
 	irsav1alpha1 "domc.me/irsa-controller/api/v1alpha1"
 	"domc.me/irsa-controller/pkg/aws"
 	"domc.me/irsa-controller/pkg/utils/slices"
 )
 
 var (
-	ErrIamRoleNotCreated = gerrors.New("Iam role has not been created")
-	requeuePeriod        = time.Minute * 3
+	ErrIamRoleNotCreated      = gerrors.New("Iam role has not been created")
+	ErrServiceAccountConflict = gerrors.New("ServiceAccount is already exists and not manged by irsa-controller")
+	requeuePeriod             = time.Minute * 3
+	irsaAnnotationKey         = "eks.amazonaws.com/role-arn"
 )
 
 // IamRoleServiceAccountReconciler reconciles a IamRoleServiceAccount object
@@ -130,6 +135,7 @@ func (r *IamRoleServiceAccountReconciler) Reconcile(ctx context.Context, req ctr
 func (r *IamRoleServiceAccountReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&irsav1alpha1.IamRoleServiceAccount{}).
+		Owns(&corev1.ServiceAccount{}).
 		Complete(r)
 }
 
@@ -145,14 +151,23 @@ func (r *IamRoleServiceAccountReconciler) reconcile(ctx context.Context, irsa *i
 	}
 
 	// check before createing
-	if irsa.Status.Condition == irsav1alpha1.IrsaPending || irsa.Status.Condition == irsav1alpha1.IrsaForbidden || irsa.Status.Condition == irsav1alpha1.IrsaRoleConflict {
+	if irsa.Status.Condition == irsav1alpha1.IrsaPending || irsa.Status.Condition == irsav1alpha1.IrsaForbidden || irsa.Status.Condition == irsav1alpha1.IrsaConflict {
 		l.Info("Checking before creating iam role in aws account")
-		status, err := r.checkExternalResources(ctx, irsa)
-		if err != nil {
-			irsa.Status.Reason = err.Error()
+		if err := r.reconcileServiceAccount(ctx, irsa, true); err != nil {
+			updated := false
+			if gerrors.Is(err, ErrServiceAccountConflict) {
+				updated = r.updateIrsaStatus(ctx, irsa, irsav1alpha1.IrsaConflict, err)
+			} else {
+				updated = r.updateIrsaStatus(ctx, irsa, irsav1alpha1.IrsaForbidden, err)
+			}
+			return !updated, gerrors.Wrap(err, "Check service account failed")
 		}
+		status, err := r.checkExternalResources(ctx, irsa)
 		updated := r.updateIrsaStatus(ctx, irsa, status, err)
-		return !updated, gerrors.Wrap(err, "Check iam role failed when irsa is pending")
+		if err != nil {
+			return !updated, gerrors.Wrap(err, "Check iam role failed when irsa is pending")
+		}
+		return !updated, nil
 	}
 
 	// init irsa and iam role
@@ -180,10 +195,17 @@ func (r *IamRoleServiceAccountReconciler) reconcile(ctx context.Context, irsa *i
 		}
 	}
 
-	err := r.updateExternalResourcesIfNeed(ctx, irsa)
-	if err != nil {
+	if err := r.updateExternalResourcesIfNeed(ctx, irsa); err != nil {
 		updated := r.updateIrsaStatus(ctx, irsa, irsav1alpha1.IrsaFailed, err)
 		return !updated, gerrors.Wrap(err, "Update external resources failed")
+	}
+
+	if err := r.reconcileServiceAccount(ctx, irsa, false); err != nil {
+		updated := false
+		if gerrors.Is(err, ErrServiceAccountConflict) {
+			updated = r.updateIrsaStatus(ctx, irsa, irsav1alpha1.IrsaConflict, err)
+		}
+		return !updated, gerrors.Wrap(err, "Reconcile service account failed")
 	}
 
 	return true, nil
@@ -197,9 +219,15 @@ func (r *IamRoleServiceAccountReconciler) finalize(ctx context.Context, irsa *ir
 	needRequeue := func(e error) bool {
 		return hit && e != nil
 	}
+
 	// irsa is being deleted and finalizer has not been handled
 	if deleted && slices.ContainsString(irsa.ObjectMeta.Finalizers, myFinalizerName) {
-		l.Info("IRSA is being deleted, cleaning aws iam role")
+		l.Info("IRSA is being deleted, cleaning service account and aws iam role")
+
+		if err := r.deleteServiceAccount(ctx, irsa); err != nil {
+			return hit, needRequeue(err), err
+		}
+
 		if err := r.deleteExternalResources(ctx, irsa); err != nil {
 			return hit, needRequeue(err), err
 		}
@@ -226,7 +254,7 @@ func (r *IamRoleServiceAccountReconciler) checkExternalResources(ctx context.Con
 	}
 	// check whether role is managed by irsa
 	if role != nil && !role.IsManagedByIrsaController() {
-		return irsav1alpha1.IrsaRoleConflict, fmt.Errorf("Iam role is not managed by irsa controller")
+		return irsav1alpha1.IrsaConflict, fmt.Errorf("Iam role is not managed by irsa controller")
 	}
 	return irsav1alpha1.IrsaProgressing, nil
 }
@@ -267,6 +295,91 @@ func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Co
 			}
 		}
 
+	}
+	return nil
+}
+
+func (r *IamRoleServiceAccountReconciler) reconcileServiceAccount(ctx context.Context, irsa *v1alpha1.IamRoleServiceAccount, dryRun bool) error {
+	roleArn := irsa.Status.RoleArn
+	var sa corev1.ServiceAccount
+	namespace := irsa.GetNamespace()
+	saName := irsa.GetName()
+	dryRunCreateOption := func(dry bool) []client.CreateOption {
+		if dry {
+			return []client.CreateOption{client.DryRunAll}
+		}
+		return []client.CreateOption{}
+	}
+	dryRunUpdateOption := func(dry bool) []client.UpdateOption {
+		if dry {
+			return []client.UpdateOption{client.DryRunAll}
+		}
+		return []client.UpdateOption{}
+	}
+
+	err := r.Client.Get(ctx, types.NamespacedName{
+		Namespace: namespace,
+		Name:      saName,
+	}, &sa)
+	// update sa to latest
+	sa.Namespace = namespace
+	sa.Name = saName
+	if sa.Annotations == nil {
+		sa.Annotations = make(map[string]string)
+	}
+	sa.Annotations[irsaAnnotationKey] = roleArn
+	if err != nil {
+		if errors.IsNotFound(err) {
+			if err := ctrl.SetControllerReference(irsa, &sa, r.Scheme); err != nil {
+				return gerrors.Wrap(err, "Set controller reference failed")
+			}
+
+			return r.Client.Create(ctx, &sa, dryRunCreateOption(dryRun)...)
+		}
+		return gerrors.Wrap(err, "Get service account failed")
+	}
+
+	if owned := r.serviceAccountNameIsOwnedByIrsa(&sa, irsa); !owned {
+		return ErrServiceAccountConflict
+	}
+
+	// role is not created, no need to reconcile sa
+	if roleArn == "" || irsa.Status.Condition != irsav1alpha1.IrsaOK {
+		return nil
+	}
+
+	return r.Client.Update(ctx, &sa, dryRunUpdateOption(dryRun)...)
+}
+
+func (r *IamRoleServiceAccountReconciler) serviceAccountNameIsOwnedByIrsa(sa *corev1.ServiceAccount, irsa *v1alpha1.IamRoleServiceAccount) bool {
+	for _, or := range sa.GetOwnerReferences() {
+		if or.UID == irsa.UID {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *IamRoleServiceAccountReconciler) deleteServiceAccount(ctx context.Context, irsa *v1alpha1.IamRoleServiceAccount) error {
+	var sa corev1.ServiceAccount
+	err := r.Client.Get(ctx, types.NamespacedName{
+		Namespace: irsa.GetNamespace(),
+		Name:      irsa.GetName(),
+	}, &sa)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return gerrors.Wrap(err, "Get service account by irsa failed")
+	}
+	owned := r.serviceAccountNameIsOwnedByIrsa(&sa, irsa)
+	if !owned {
+		return nil
+	}
+
+	err = r.Delete(ctx, &sa)
+	if err != nil {
+		return gerrors.Wrap(err, "Delete service account failed")
 	}
 	return nil
 }

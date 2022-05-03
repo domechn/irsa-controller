@@ -83,13 +83,13 @@ type IamRoleServiceAccountStatus struct {
 type IrsaCondition string
 
 var (
-	IrsaSubmitted    IrsaCondition = ""
-	IrsaPending      IrsaCondition = "Pending"
-	IrsaRoleConflict IrsaCondition = "RoleConflict"
-	IrsaForbidden    IrsaCondition = "Forbidden"
-	IrsaFailed       IrsaCondition = "Failed"
-	IrsaProgressing  IrsaCondition = "Progressing"
-	IrsaOK           IrsaCondition = "Created"
+	IrsaSubmitted   IrsaCondition = ""
+	IrsaPending     IrsaCondition = "Pending"
+	IrsaConflict    IrsaCondition = "Conflict"
+	IrsaForbidden   IrsaCondition = "Forbidden"
+	IrsaFailed      IrsaCondition = "Failed"
+	IrsaProgressing IrsaCondition = "Progressing"
+	IrsaOK          IrsaCondition = "Created"
 )
 
 //+kubebuilder:object:root=true
