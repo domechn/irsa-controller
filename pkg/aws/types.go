@@ -91,15 +91,17 @@ type RoleStatement struct {
 	Effect    StatementEffect
 	Action    []string
 	Resource  []string
-	Condition map[string]map[string]string
+	Condition StatementCondition `json:"Condition,omitempty"`
 }
+
+type StatementCondition map[string]map[string]string
 
 func roleStatementFromIRSAStatementSpec(sts *irsav1alpha1.StatementSpec) RoleStatement {
 	return RoleStatement{
 		Effect:    StatementEffect(sts.Effect),
 		Action:    sts.Action,
 		Resource:  sts.Resource,
-		Condition: sts.Condition,
+		Condition: StatementCondition(sts.Condition),
 	}
 }
 

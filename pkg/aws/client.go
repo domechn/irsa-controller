@@ -24,11 +24,14 @@ type IamClient struct {
 func NewIamClient(clusterName, iamRolePrefix string, additionalTagsArgs []string) *IamClient {
 	awsconf := aws.NewConfig()
 	session := session.New()
-	// client.New(aws.NewConfig(), info metadata.ClientInfo, handlers request.Handlers, options ...func(*client.Client))
+	return newIamClient(clusterName, iamRolePrefix, additionalTagsArgs, iam.New(session, awsconf))
+}
+
+func newIamClient(clusterName, iamRolePrefix string, additionalTagsArgs []string, iamClient iamiface.IAMAPI) *IamClient {
 	return &IamClient{
 		prefix:         iamRolePrefix,
 		clusterName:    clusterName,
-		iamClient:      iam.New(session, awsconf),
+		iamClient:      iamClient,
 		additionalTags: parseAdditionalTagsArgs(additionalTagsArgs),
 	}
 }

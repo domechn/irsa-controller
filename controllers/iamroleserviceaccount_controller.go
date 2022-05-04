@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/aws/aws-sdk-go/service/iam"
 	gerrors "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -40,6 +41,7 @@ import (
 var (
 	ErrIamRoleNotCreated      = gerrors.New("Iam role has not been created")
 	ErrServiceAccountConflict = gerrors.New("ServiceAccount is already exists and not manged by irsa-controller")
+	ErrIamRoleConflict        = gerrors.New("Iam role is already exists and not manged by irsa-controller")
 	requeuePeriod             = time.Minute * 3
 	irsaAnnotationKey         = "eks.amazonaws.com/role-arn"
 )
@@ -250,7 +252,10 @@ func (r *IamRoleServiceAccountReconciler) checkExternalResources(ctx context.Con
 	role, err := r.IamRoleClient.Get(ctx, r.IamRoleClient.RoleName(irsa))
 	if err != nil {
 		// TODO: Distinguish between roles because they don't exist and because they don't have permissions
-		return irsav1alpha1.IrsaForbidden, err
+		// if err is not not found
+		if err != nil {
+			return irsav1alpha1.IrsaForbidden, err
+		}
 	}
 	// check whether role is managed by irsa
 	if role != nil && !role.IsManagedByIrsaController() {
@@ -267,6 +272,7 @@ func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Co
 
 	// update role arn and inline policy arn in irsa
 	defer func() {
+		// if role has been created, set it into status
 		irsa.Status.RoleArn = roleArn
 		if inlinePolicyArn != "" {
 			irsa.Status.InlinePolicyArn = &inlinePolicyArn
@@ -275,27 +281,35 @@ func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Co
 
 	if roleName == "" {
 		roleArn, inlinePolicyArn, err = r.IamRoleClient.Create(ctx, r.OIDC, irsa)
-		// TODO: if role already exists, check its tags, if its tag contains `irsa-controller: y` , update it. Else return error
 		if err != nil {
-			// if role has been created, set it into status
+			// if role already exists, check its tags, if its tag contains `irsa-controller: y` , update it. Else return error
+			if gerrors.As(err, iam.ErrCodeEntityAlreadyExistsException) {
+				role, err := r.IamRoleClient.Get(ctx, r.IamRoleClient.RoleName(irsa))
+				if err != nil {
+					return gerrors.Wrap(err, "Iam has already exists and cannot be getten")
+				}
+				if !role.IsManagedByIrsaController() {
+					return ErrIamRoleConflict
+				}
+			}
 
 			return gerrors.Wrap(err, "Create iam role failed")
 		}
-	} else {
-		// update its trust entities
-		role, err := r.IamRoleClient.Get(ctx, roleName)
-		roleArn = role.RoleArn
-		if err != nil {
-			return gerrors.Wrap(err, "Get iam role failed")
-		}
-
-		if !role.AssumeRolePolicy.IsAllowOIDC(r.OIDC, irsa.GetNamespace(), irsa.GetName()) {
-			if err := r.IamRoleClient.AllowServiceAccountAccess(ctx, role, r.OIDC, irsa.GetNamespace(), irsa.GetName()); err != nil {
-				return gerrors.Wrap(err, "Allow sa access iam role failed in create")
-			}
-		}
-
 	}
+
+	// update its trust entities
+	role, err := r.IamRoleClient.Get(ctx, roleName)
+	roleArn = role.RoleArn
+	if err != nil {
+		return gerrors.Wrap(err, "Get iam role failed")
+	}
+
+	if !role.AssumeRolePolicy.IsAllowOIDC(r.OIDC, irsa.GetNamespace(), irsa.GetName()) {
+		if err := r.IamRoleClient.AllowServiceAccountAccess(ctx, role, r.OIDC, irsa.GetNamespace(), irsa.GetName()); err != nil {
+			return gerrors.Wrap(err, "Allow sa access iam role failed in create")
+		}
+	}
+
 	return nil
 }
 
