@@ -461,7 +461,7 @@ func TestIamClient_UpdateAssumePolicy(t *testing.T) {
 		t.Fatalf("New assume role policy doc failed: %v", err)
 	}
 	role, err := client.iamClient.CreateRole(&iam.CreateRoleInput{
-		RoleName:                 aws.String("test-deattach-role"),
+		RoleName:                 aws.String("test-update-assume-role"),
 		AssumeRolePolicyDocument: aws.String(doc),
 	})
 	if err != nil {
@@ -513,6 +513,94 @@ func TestIamClient_UpdateAssumePolicy(t *testing.T) {
 			}
 			if !reflect.DeepEqual(tt.args.assumePolicy, gotDoc) {
 				t.Errorf("IamClient.UpdateAssumePolicy() got = %v, want = %v", gotDoc, tt.args.assumePolicy)
+			}
+		})
+	}
+}
+
+func TestIamClient_UpdateTags(t *testing.T) {
+	l, err := localstack.NewInstance()
+	if err != nil {
+		t.Fatalf("Could not connect to Docker %v", err)
+	}
+	if err := l.Start(); err != nil {
+		t.Fatalf("Could not start localstack %v", err)
+	}
+	defer l.Stop()
+	client := getMockIamClient(l)
+
+	doc, err := NewAssumeRolePolicyDoc(testOidcProviderArn, "default", "default")
+	if err != nil {
+		t.Fatalf("New assume role policy doc failed: %v", err)
+	}
+	role, err := client.iamClient.CreateRole(&iam.CreateRoleInput{
+		RoleName:                 aws.String("test-update-assume-role"),
+		AssumeRolePolicyDocument: aws.String(doc),
+	})
+	if err != nil {
+		t.Fatalf("Prepare iam role failed: %v", err)
+	}
+
+	type args struct {
+		ctx      context.Context
+		roleName string
+		tags     map[string]string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "update iam role tags",
+			args: args{
+				ctx:      context.Background(),
+				roleName: *role.Role.RoleName,
+				tags: map[string]string{
+					"k1": "v1",
+					"k2": "v2",
+				},
+			},
+		},
+		{
+			name: "update fixed tags should not work",
+			args: args{
+				ctx:      context.Background(),
+				roleName: *role.Role.RoleName,
+				tags: map[string]string{
+					"k1": "v1",
+					// should not work
+					IrsaContollerManagedTagKey: "n",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := client
+			if err := c.UpdateTags(tt.args.ctx, tt.args.roleName, tt.args.tags); (err != nil) != tt.wantErr {
+				t.Errorf("IamClient.UpdateTags() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			gotRole, err := c.iamClient.GetRole(&iam.GetRoleInput{
+				RoleName: &tt.args.roleName,
+			})
+			if err != nil {
+				t.Fatalf("Get iam role failed: %v", err)
+			}
+			for expectK, expectV := range tt.args.tags {
+				found := false
+				for _, tag := range gotRole.Role.Tags {
+					// fixed tag should not be updated
+					if *tag.Key == IrsaContollerManagedTagKey {
+						found = *tag.Value == IrsaContollerManagedTagVal
+					} else if *tag.Key == expectK {
+						found = expectV == *tag.Value
+					}
+				}
+				if !found {
+					t.Errorf("Not get expect tag, key: %s", expectK)
+				}
 			}
 		})
 	}

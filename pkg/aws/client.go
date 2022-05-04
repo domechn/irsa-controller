@@ -65,7 +65,7 @@ func (c *IamClient) Create(ctx context.Context, oidcProvider string, irsa *v1alp
 	output, err := c.iamClient.CreateRoleWithContext(ctx, &iam.CreateRoleInput{
 		RoleName:                 aws.String(roleName),
 		AssumeRolePolicyDocument: aws.String(assumeRoleDocument),
-		Tags:                     c.getIamRoleTags(),
+		Tags:                     c.getIamRoleTags(nil),
 	})
 	if err != nil {
 		return "", "", errors.Wrap(err, "Create role in aws failed")
@@ -150,13 +150,7 @@ func (c *IamClient) UpdateAssumePolicy(ctx context.Context, roleName string, ass
 
 func (c *IamClient) UpdateTags(ctx context.Context, roleName string, tags map[string]string) error {
 	// append fixed tags setten in controller started
-	irts := c.getIamRoleTags()
-	for k, v := range tags {
-		irts = append(irts, &iam.Tag{
-			Key:   aws.String(k),
-			Value: aws.String(v),
-		})
-	}
+	irts := c.getIamRoleTags(tags)
 	_, err := c.iamClient.TagRole(&iam.TagRoleInput{
 		RoleName: aws.String(roleName),
 		Tags:     irts,
@@ -295,11 +289,22 @@ func (c *IamClient) getInlinePolicyName(roleName string) string {
 	return fmt.Sprintf("%s-inline-policy", roleName)
 }
 
-func (c *IamClient) getIamRoleTags() []*iam.Tag {
+func (c *IamClient) getIamRoleTags(specificTags map[string]string) []*iam.Tag {
+	tagsMap := make(map[string]string)
+
 	var res []*iam.Tag
-	// fixed key value: managed by irsa-controller
-	c.additionalTags[IrsaContollerManagedTagKey] = IrsaContollerManagedTagVal
 	for k, v := range c.additionalTags {
+		tagsMap[k] = v
+	}
+
+	for k, v := range specificTags {
+		tagsMap[k] = v
+	}
+
+	// fixed key value: managed by irsa-controller
+	tagsMap[IrsaContollerManagedTagKey] = IrsaContollerManagedTagVal
+
+	for k, v := range tagsMap {
 		res = append(res, &iam.Tag{
 			Key:   aws.String(k),
 			Value: aws.String(v),
