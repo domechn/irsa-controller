@@ -267,20 +267,17 @@ func (r *IamRoleServiceAccountReconciler) checkExternalResources(ctx context.Con
 func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount) error {
 	// determine the role
 	roleName := irsa.Spec.RoleName
-	var roleArn, inlinePolicyArn string
+	var roleArn string
 	var err error
 
 	// update role arn and inline policy arn in irsa
 	defer func() {
 		// if role has been created, set it into status
 		irsa.Status.RoleArn = roleArn
-		if inlinePolicyArn != "" {
-			irsa.Status.InlinePolicyArn = &inlinePolicyArn
-		}
 	}()
 
 	if roleName == "" {
-		roleArn, inlinePolicyArn, err = r.IamRoleClient.Create(ctx, r.OIDC, irsa)
+		roleArn, err = r.IamRoleClient.Create(ctx, r.OIDC, irsa)
 		if err != nil {
 			// if role already exists, check its tags, if its tag contains `irsa-controller: y` , update it. Else return error
 			if gerrors.As(err, iam.ErrCodeEntityAlreadyExistsException) {
@@ -404,7 +401,6 @@ func (r *IamRoleServiceAccountReconciler) updateExternalResourcesIfNeed(ctx cont
 		return r.updateExternalIamRoleIfNeed(ctx, irsa)
 	}
 	roleArn := irsa.Status.RoleArn
-	inlinePolicyArn := irsa.Status.InlinePolicyArn
 	if roleArn == "" {
 		return ErrIamRoleNotCreated
 	}
@@ -461,8 +457,8 @@ func (r *IamRoleServiceAccountReconciler) updateExternalResourcesIfNeed(ctx cont
 		}
 	}
 
-	if inlinePolicyArn != nil && !reflect.DeepEqual(gotRole.InlinePolicy, wantRole.InlinePolicy) {
-		err = r.IamRoleClient.UpdatePolicy(ctx, *inlinePolicyArn, wantRole.InlinePolicy)
+	if !reflect.DeepEqual(gotRole.InlinePolicy, wantRole.InlinePolicy) {
+		err = r.IamRoleClient.UpdateInlinePolicy(ctx, roleName, wantRole.InlinePolicy)
 		if err != nil {
 			return gerrors.Wrap(err, "Sync inline policy failed")
 		}
@@ -523,16 +519,7 @@ func (r *IamRoleServiceAccountReconciler) deleteExternalResources(ctx context.Co
 	if err := r.IamRoleClient.Delete(ctx, roleArn); err != nil {
 		return gerrors.Wrap(err, "Delete iam role failed")
 	}
-	inlinePolicyArn := irsa.Status.InlinePolicyArn
-	if inlinePolicyArn == nil {
-		l.V(5).Info("Inline policy arn has not been generated, no need to delete")
-		return nil
-	}
-	if err := r.IamRoleClient.DeletePolicy(ctx, *inlinePolicyArn); err != nil {
-		return gerrors.Wrap(err, "Delete inline policy failed")
-	}
 	return nil
-
 }
 
 func (r *IamRoleServiceAccountReconciler) updateIrsaStatus(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount, condition irsav1alpha1.IrsaCondition, reconcileErr error) bool {

@@ -172,16 +172,13 @@ func TestIamClient_Create(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := client
-			got, got1, err := c.Create(tt.args.ctx, tt.args.oidcProvider, tt.args.irsa)
+			got, err := c.Create(tt.args.ctx, tt.args.oidcProvider, tt.args.irsa)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("IamClient.Create() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if got != tt.want {
 				t.Errorf("IamClient.Create() got = %v, want %v", got, tt.want)
-			}
-			if got1 != tt.want1 {
-				t.Errorf("IamClient.Create() got1 = %v, want %v", got1, tt.want1)
 			}
 
 			if got != "" {
@@ -205,15 +202,32 @@ func TestIamClient_Create(t *testing.T) {
 					t.Errorf("List attached role policies in %s failed: %v", got, err)
 				}
 
-				findGot1 := false
-				if got1 == "" {
-					findGot1 = true
+				if tt.args.irsa.Spec.Policy != nil && tt.args.irsa.Spec.Policy.InlinePolicy != nil {
+					inline, err := c.iamClient.GetRolePolicy(&iam.GetRolePolicyInput{
+						RoleName:   aws.String(RoleNameByArn(got)),
+						PolicyName: aws.String(c.getInlinePolicyName(RoleNameByArn(got))),
+					})
+					if err != nil {
+						t.Errorf("Get inline policy failed: %v", err)
+					}
+
+					gotIpc := new(RoleDocument)
+					err = json.Unmarshal([]byte(*inline.PolicyDocument), gotIpc)
+					if err != nil {
+						t.Errorf("Unmarshal inline policy failed: %v", err)
+					}
+
+					wantRole := NewIamRole(testOidcProviderArn, tt.args.irsa)
+
+					if !reflect.DeepEqual(gotIpc, wantRole.InlinePolicy) {
+						t.Errorf("IamClient.Create() policy got = %v, want = %v", gotIpc, wantRole.InlinePolicy)
+					}
+
 				}
+
 				for _, ap := range policies.AttachedPolicies {
 					// check inline policy
-					if *ap.PolicyArn == got1 {
-						findGot1 = true
-					} else if tt.args.irsa.Spec.Policy != nil {
+					if tt.args.irsa.Spec.Policy != nil {
 						findMp := false
 						// check manged polices
 						for _, mp := range tt.args.irsa.Spec.Policy.ManagedPolicies {
@@ -228,9 +242,9 @@ func TestIamClient_Create(t *testing.T) {
 
 				}
 
-				if !findGot1 {
-					t.Errorf("Inline policy %s in not in attached policies: %v", got1, policies.AttachedPolicies)
-				}
+				// if !findGot1 {
+				// 	t.Errorf("Inline policy %s in not in attached policies: %v", got1, policies.AttachedPolicies)
+				// }
 			}
 		})
 	}
@@ -602,6 +616,91 @@ func TestIamClient_UpdateTags(t *testing.T) {
 					t.Errorf("Not get expect tag, key: %s", expectK)
 				}
 			}
+		})
+	}
+}
+
+func TestIamClient_UpdatePolicy(t *testing.T) {
+	l, err := localstack.NewInstance()
+	if err != nil {
+		t.Fatalf("Could not connect to Docker %v", err)
+	}
+	if err := l.Start(); err != nil {
+		t.Fatalf("Could not start localstack %v", err)
+	}
+	defer l.Stop()
+	client := getMockIamClient(l)
+
+	policy, err := client.iamClient.CreatePolicy(&iam.CreatePolicyInput{
+		PolicyName:     aws.String("update-policy"),
+		PolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[{"Resource":"*","Effect":"Allow","Action":"*"}]}`),
+	})
+	if err != nil {
+		t.Fatalf("Prepare update policy failed: %v", err)
+	}
+
+	type args struct {
+		ctx       context.Context
+		policyArn string
+		policy    *RoleDocument
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "update policy",
+			args: args{
+				ctx:       context.Background(),
+				policyArn: *policy.Policy.Arn,
+				policy: &RoleDocument{
+					Version: "2012-10-17",
+					Statement: []RoleStatement{
+						{
+							Effect:   StatementAllow,
+							Action:   []string{"*"},
+							Resource: []string{"*"},
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := client
+			if err := c.UpdatePolicy(tt.args.ctx, tt.args.policyArn, tt.args.policy); (err != nil) != tt.wantErr {
+				t.Errorf("IamClient.UpdatePolicy() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				return
+			}
+			p, err := c.iamClient.GetPolicy(&iam.GetPolicyInput{PolicyArn: policy.Policy.Arn})
+			if err != nil {
+
+				t.Fatalf("Get policy failed: %v", err)
+			}
+
+			got, err := c.iamClient.GetPolicyVersion(&iam.GetPolicyVersionInput{
+				PolicyArn: policy.Policy.Arn,
+				VersionId: p.Policy.DefaultVersionId,
+			})
+			if err != nil {
+				t.Fatalf("Get policy version failed: %v", err)
+			}
+
+			gotDoc := new(RoleDocument)
+			err = json.Unmarshal([]byte(*got.PolicyVersion.Document), gotDoc)
+			if err != nil {
+				t.Errorf("Unmarshal policy document failed: %v", err)
+			}
+
+			if !reflect.DeepEqual(gotDoc, tt.args.policy) {
+				t.Errorf("IamClient.UpdatePolicy() got = %v, want = %v", got.PolicyVersion.Document, gotDoc)
+			}
+
 		})
 	}
 }
