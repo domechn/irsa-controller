@@ -117,15 +117,15 @@ func (c *IamClient) AttachRolePolicy(ctx context.Context, roleName string, polic
 	return nil
 }
 
-func (c *IamClient) DeAttachRolePolicy(ctx context.Context, roleName string, polices []string) error {
+func (c *IamClient) DetachRolePolicy(ctx context.Context, roleName string, polices []string) error {
 	for _, policyArn := range polices {
 		if policyArn == "" {
 			continue
 		}
-		if _, err := c.iamClient.DeleteRolePolicyWithContext(ctx, &iam.DeleteRolePolicyInput{
-			RoleName: aws.String(roleName),
-			// TODO: fix get policy name by arn
-			PolicyName: aws.String(RoleNameByArn(policyArn)),
+		fmt.Println(policyArn)
+		if _, err := c.iamClient.DetachRolePolicyWithContext(ctx, &iam.DetachRolePolicyInput{
+			RoleName:  aws.String(roleName),
+			PolicyArn: aws.String(policyArn),
 		}); err != nil {
 			return errors.Wrap(err, "DeAttach role policy failed")
 		}

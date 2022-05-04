@@ -2,7 +2,11 @@ package aws
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
+	"reflect"
+	"strings"
 	"testing"
 
 	"domc.me/irsa-controller/api/v1alpha1"
@@ -284,6 +288,231 @@ func TestIamClient_RoleName(t *testing.T) {
 			}
 			if got := c.RoleName(tt.args.irsa); got != tt.want {
 				t.Errorf("IamClient.RoleName() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIamClient_AttachRolePolicy(t *testing.T) {
+	l, err := localstack.NewInstance()
+	if err != nil {
+		t.Fatalf("Could not connect to Docker %v", err)
+	}
+	if err := l.Start(); err != nil {
+		t.Fatalf("Could not start localstack %v", err)
+	}
+	defer l.Stop()
+	client := getMockIamClient(l)
+	existsPolicy, err := client.iamClient.CreatePolicy(&iam.CreatePolicyInput{
+		PolicyName:     aws.String("exists-policy"),
+		PolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[{"Resource":"*","Effect":"Allow","Action":"*"}]}`),
+	})
+	if err != nil {
+		t.Fatalf("Prepare exists policy failed: %v ", err)
+	}
+
+	type args struct {
+		ctx     context.Context
+		polices []string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "attach exists role",
+			args: args{
+				ctx: context.Background(),
+				polices: []string{
+					*existsPolicy.Policy.Arn,
+				},
+			},
+		},
+		{
+			name: "attach not exists role",
+			args: args{
+				ctx: context.Background(),
+				polices: []string{
+					"arn:aws:iam::000000000000:policy/not-exists",
+				},
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := client
+			doc, err := NewAssumeRolePolicyDoc(testOidcProviderArn, "default", "default")
+			if err != nil {
+				t.Fatalf("New assume role policy doc failed: %v", err)
+			}
+			roleOut, err := c.iamClient.CreateRole(&iam.CreateRoleInput{
+				RoleName:                 aws.String(strings.Join(strings.Split(tt.name, " "), "-")),
+				AssumeRolePolicyDocument: aws.String(doc),
+			})
+			if err != nil {
+				t.Fatalf("Prepare iam role failed: %v", err)
+			}
+			if err := c.AttachRolePolicy(tt.args.ctx, *roleOut.Role.RoleName, tt.args.polices); (err != nil) != tt.wantErr {
+				t.Errorf("IamClient.AttachRolePolicy() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestIamClient_DetachRolePolicy(t *testing.T) {
+	l, err := localstack.NewInstance()
+	if err != nil {
+		t.Fatalf("Could not connect to Docker %v", err)
+	}
+	if err := l.Start(); err != nil {
+		t.Fatalf("Could not start localstack %v", err)
+	}
+	defer l.Stop()
+	client := getMockIamClient(l)
+
+	doc, err := NewAssumeRolePolicyDoc(testOidcProviderArn, "default", "default")
+	if err != nil {
+		t.Fatalf("New assume role policy doc failed: %v", err)
+	}
+	role, err := client.iamClient.CreateRole(&iam.CreateRoleInput{
+		RoleName:                 aws.String("test-deattach-role"),
+		AssumeRolePolicyDocument: aws.String(doc),
+	})
+	if err != nil {
+		t.Fatalf("Prepare iam role failed: %v", err)
+	}
+	deAttachPolicy, err := client.iamClient.CreatePolicy(&iam.CreatePolicyInput{
+		PolicyName:     aws.String("deattach-policy"),
+		PolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[{"Resource":"*","Effect":"Allow","Action":"*"}]}`),
+	})
+	if err != nil {
+		t.Fatalf("Prepare exists policy failed: %v ", err)
+	}
+
+	_, err = client.iamClient.AttachRolePolicy(&iam.AttachRolePolicyInput{
+		PolicyArn: deAttachPolicy.Policy.Arn,
+		RoleName:  role.Role.RoleName,
+	})
+	if err != nil {
+		t.Fatalf("Attach role policy failed: %v", err)
+	}
+
+	fmt.Println(client.iamClient.ListAttachedRolePolicies(&iam.ListAttachedRolePoliciesInput{
+		RoleName: role.Role.RoleName,
+	}))
+
+	type args struct {
+		ctx      context.Context
+		roleName string
+		polices  []string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "deattach attached policy",
+			args: args{
+				ctx:      context.Background(),
+				roleName: *role.Role.RoleName,
+				polices: []string{
+					*deAttachPolicy.Policy.Arn,
+				},
+			},
+		},
+		{
+			name: "deattach not attached policy",
+			args: args{
+				ctx:      context.Background(),
+				roleName: *role.Role.RoleName,
+				polices: []string{
+					"arn:aws:iam::000000000000:policy/not-deattached",
+				},
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := client
+			if err := c.DetachRolePolicy(tt.args.ctx, tt.args.roleName, tt.args.polices); (err != nil) != tt.wantErr {
+				t.Errorf("IamClient.DeAttachRolePolicy() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestIamClient_UpdateAssumePolicy(t *testing.T) {
+	l, err := localstack.NewInstance()
+	if err != nil {
+		t.Fatalf("Could not connect to Docker %v", err)
+	}
+	if err := l.Start(); err != nil {
+		t.Fatalf("Could not start localstack %v", err)
+	}
+	defer l.Stop()
+	client := getMockIamClient(l)
+
+	doc, err := NewAssumeRolePolicyDoc(testOidcProviderArn, "default", "default")
+	if err != nil {
+		t.Fatalf("New assume role policy doc failed: %v", err)
+	}
+	role, err := client.iamClient.CreateRole(&iam.CreateRoleInput{
+		RoleName:                 aws.String("test-deattach-role"),
+		AssumeRolePolicyDocument: aws.String(doc),
+	})
+	if err != nil {
+		t.Fatalf("Prepare iam role failed: %v", err)
+	}
+
+	newDoc := NewAssumeRolePolicy(testOidcProviderArn, "default", "new")
+
+	type args struct {
+		ctx          context.Context
+		roleName     string
+		assumePolicy *AssumeRoleDocument
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "update assume policy",
+			args: args{
+				ctx:          context.Background(),
+				roleName:     *role.Role.RoleName,
+				assumePolicy: &newDoc,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := client
+			if err := c.UpdateAssumePolicy(tt.args.ctx, tt.args.roleName, tt.args.assumePolicy); (err != nil) != tt.wantErr {
+				t.Errorf("IamClient.UpdateAssumePolicy() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			role, err := c.iamClient.GetRole(&iam.GetRoleInput{
+				RoleName: &tt.args.roleName,
+			})
+			if err != nil {
+				t.Fatalf("Get role failed: %v", err)
+			}
+			gotDoc := new(AssumeRoleDocument)
+			err = json.Unmarshal([]byte(*role.Role.AssumeRolePolicyDocument), gotDoc)
+			if err != nil {
+				t.Errorf("Unmarshal assume role policy doc failed: %v", err)
+			}
+			if !reflect.DeepEqual(tt.args.assumePolicy, gotDoc) {
+				t.Errorf("IamClient.UpdateAssumePolicy() got = %v, want = %v", gotDoc, tt.args.assumePolicy)
 			}
 		})
 	}

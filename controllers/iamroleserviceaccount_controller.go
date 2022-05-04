@@ -456,7 +456,7 @@ func (r *IamRoleServiceAccountReconciler) updateExternalResourcesIfNeed(ctx cont
 		if err := r.IamRoleClient.AttachRolePolicy(ctx, roleName, attaches); err != nil {
 			return gerrors.Wrap(err, "Sync missing managed roles failed")
 		}
-		if err := r.IamRoleClient.DeAttachRolePolicy(ctx, roleName, deAttaches); err != nil {
+		if err := r.IamRoleClient.DetachRolePolicy(ctx, roleName, deAttaches); err != nil {
 			return gerrors.Wrap(err, "Sync overflow managed roles failed")
 		}
 	}
