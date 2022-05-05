@@ -280,6 +280,7 @@ func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Co
 		roleArn, err = r.IamRoleClient.Create(ctx, r.OIDC, irsa)
 		if err != nil {
 			// if role already exists, check its tags, if its tag contains `irsa-controller: y` , update it. Else return error
+			// TODO fix type of ErrCodeEntityAlreadyExistsException
 			if gerrors.As(err, iam.ErrCodeEntityAlreadyExistsException) {
 				role, err := r.IamRoleClient.Get(ctx, r.IamRoleClient.RoleName(irsa))
 				if err != nil {

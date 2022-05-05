@@ -704,3 +704,385 @@ func TestIamClient_UpdatePolicy(t *testing.T) {
 		})
 	}
 }
+
+func TestIamClient_UpdateInlinePolicy(t *testing.T) {
+	l, err := localstack.NewInstance()
+	if err != nil {
+		t.Fatalf("Could not connect to Docker %v", err)
+	}
+	if err := l.Start(); err != nil {
+		t.Fatalf("Could not start localstack %v", err)
+	}
+	defer l.Stop()
+	client := getMockIamClient(l)
+
+	doc, err := NewAssumeRolePolicyDoc(testOidcProviderArn, "default", "default")
+	if err != nil {
+		t.Fatalf("New assume role policy doc failed: %v", err)
+	}
+	role, err := client.iamClient.CreateRole(&iam.CreateRoleInput{
+		RoleName:                 aws.String("test-update-inline-policy-role"),
+		AssumeRolePolicyDocument: aws.String(doc),
+	})
+	if err != nil {
+		t.Fatalf("Prepare iam role failed: %v", err)
+	}
+
+	type args struct {
+		ctx      context.Context
+		roleName string
+		policy   *RoleDocument
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "update inline policy",
+			args: args{
+				ctx:      context.Background(),
+				roleName: *role.Role.RoleName,
+				policy: &RoleDocument{
+					Version: "2012-10-17",
+					Statement: []RoleStatement{
+						{
+							Effect:   StatementAllow,
+							Action:   []string{"*"},
+							Resource: []string{"*"},
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := client
+			if err := c.UpdateInlinePolicy(tt.args.ctx, tt.args.roleName, tt.args.policy); (err != nil) != tt.wantErr {
+				t.Errorf("IamClient.UpdateInlinePolicy() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			policy, err := c.iamClient.GetRolePolicy(&iam.GetRolePolicyInput{
+				RoleName:   role.Role.RoleName,
+				PolicyName: aws.String(c.getInlinePolicyName(*role.Role.RoleName)),
+			})
+			if err != nil {
+				t.Errorf("Get role policy failed: %v", err)
+			}
+
+			gotPolicyOoc := new(RoleDocument)
+			err = json.Unmarshal([]byte(*policy.PolicyDocument), gotPolicyOoc)
+			if err != nil {
+				t.Errorf("Unmarshal json failed: %v", err)
+			}
+			if !reflect.DeepEqual(gotPolicyOoc, tt.args.policy) {
+				t.Errorf("IamClient.UpdateInlinePolicy() inline policy got = %v, want = %v", gotPolicyOoc, tt.args.policy)
+			}
+
+		})
+	}
+}
+
+func TestIamClient_Get(t *testing.T) {
+	l, err := localstack.NewInstance()
+	if err != nil {
+		t.Fatalf("Could not connect to Docker %v", err)
+	}
+	if err := l.Start(); err != nil {
+		t.Fatalf("Could not start localstack %v", err)
+	}
+	defer l.Stop()
+	client := getMockIamClient(l)
+
+	// init ima role
+	assumeRolePolicy := NewAssumeRolePolicy(testOidcProviderArn, "default", "default")
+	doc, err := assumeRolePolicy.AssumeRoleDocumentPolicyDocument()
+
+	if err != nil {
+		t.Fatalf("New assume role policy doc failed: %v", err)
+	}
+	role, err := client.iamClient.CreateRole(&iam.CreateRoleInput{
+		RoleName:                 aws.String("test-get-role"),
+		AssumeRolePolicyDocument: aws.String(doc),
+		Tags: []*iam.Tag{
+			{
+				Key:   aws.String("k"),
+				Value: aws.String("v"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Prepare iam role failed: %v", err)
+	}
+
+	role2, err := client.iamClient.CreateRole(&iam.CreateRoleInput{
+		RoleName:                 aws.String("test-get-role2"),
+		AssumeRolePolicyDocument: aws.String(doc),
+	})
+	if err != nil {
+		t.Fatalf("Prepare iam role failed: %v", err)
+	}
+
+	rd := &RoleDocument{
+		Version: "2012-10-17",
+		Statement: []RoleStatement{
+			{
+				Effect:   StatementAllow,
+				Action:   []string{"*"},
+				Resource: []string{"*"},
+			},
+		},
+	}
+	policyDoc, err := rd.RoleDocumentPolicyDocument()
+	if err != nil {
+		t.Fatalf("Prepare RoleDocumentPolicyDocument failed: %v", err)
+	}
+	// set inline policy
+	_, err = client.iamClient.PutRolePolicy(&iam.PutRolePolicyInput{
+		PolicyDocument: aws.String(policyDoc),
+		PolicyName:     aws.String("test-get-role-inline-policy"), // name of inline policy
+		RoleName:       role.Role.RoleName,
+	})
+	if err != nil {
+		t.Fatalf("Prepare role policy failed: %v", err)
+	}
+
+	policy, err := client.iamClient.CreatePolicy(&iam.CreatePolicyInput{
+		PolicyName:     aws.String("get-policy"),
+		PolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[{"Resource":"*","Effect":"Allow","Action":"*"}]}`),
+	})
+	if err != nil {
+		t.Fatalf("Prepare update policy failed: %v", err)
+	}
+
+	_, err = client.iamClient.AttachRolePolicy(&iam.AttachRolePolicyInput{
+		PolicyArn: policy.Policy.Arn,
+		RoleName:  role.Role.RoleName,
+	})
+	if err != nil {
+		t.Fatalf("Prepare attach role policy failed: %v", err)
+	}
+
+	type args struct {
+		ctx      context.Context
+		roleName string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *IamRole
+		wantErr bool
+	}{
+		{
+			name: "get whole role",
+			args: args{
+				ctx:      context.Background(),
+				roleName: *role.Role.RoleName,
+			},
+			want: &IamRole{
+				RoleArn:          *role.Role.Arn,
+				RoleName:         *role.Role.RoleName,
+				InlinePolicy:     rd,
+				ManagedPolicies:  []string{*policy.Policy.Arn},
+				AssumeRolePolicy: &assumeRolePolicy,
+				Tags: map[string]string{
+					"k": "v",
+				},
+			},
+		},
+		{
+			name: "get not exists role",
+			args: args{
+				ctx:      context.Background(),
+				roleName: *role.Role.RoleName + "-not-exists",
+			},
+			wantErr: true,
+		},
+		{
+			name: "get no policy role",
+			args: args{
+				ctx:      context.Background(),
+				roleName: *role2.Role.RoleName,
+			},
+			want: &IamRole{
+				RoleArn:          *role2.Role.Arn,
+				RoleName:         *role2.Role.RoleName,
+				AssumeRolePolicy: &assumeRolePolicy,
+				Tags:             map[string]string{},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := client
+			got, err := c.Get(tt.args.ctx, tt.args.roleName)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("IamClient.Get() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("IamClient.Get() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIamClient_AllowServiceAccountAccess(t *testing.T) {
+	l, err := localstack.NewInstance()
+	if err != nil {
+		t.Fatalf("Could not connect to Docker %v", err)
+	}
+	if err := l.Start(); err != nil {
+		t.Fatalf("Could not start localstack %v", err)
+	}
+	defer l.Stop()
+	client := getMockIamClient(l)
+
+	// init ima role
+	assumeRolePolicy := NewAssumeRolePolicy(testOidcProviderArn, "default", "default")
+	doc, err := assumeRolePolicy.AssumeRoleDocumentPolicyDocument()
+
+	if err != nil {
+		t.Fatalf("New assume role policy doc failed: %v", err)
+	}
+	role, err := client.iamClient.CreateRole(&iam.CreateRoleInput{
+		RoleName:                 aws.String("test-allow-sa-access-role"),
+		AssumeRolePolicyDocument: aws.String(doc),
+		Tags: []*iam.Tag{
+			{
+				Key:   aws.String("k"),
+				Value: aws.String("v"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Prepare iam role failed: %v", err)
+	}
+
+	type args struct {
+		ctx                context.Context
+		role               *IamRole
+		oidcProviderArn    string
+		namespace          string
+		serviceAccountName string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "allow sa access",
+			args: args{
+				ctx: context.Background(),
+				role: &IamRole{
+					RoleArn:          *role.Role.Arn,
+					RoleName:         *role.Role.RoleName,
+					AssumeRolePolicy: &assumeRolePolicy,
+				},
+				oidcProviderArn:    testClusterName,
+				namespace:          "test-default",
+				serviceAccountName: "test-sa",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := client
+			if err := c.AllowServiceAccountAccess(tt.args.ctx, tt.args.role, tt.args.oidcProviderArn, tt.args.namespace, tt.args.serviceAccountName); (err != nil) != tt.wantErr {
+				t.Errorf("IamClient.AllowServiceAccountAccess() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			gotRole, err := c.iamClient.GetRole(&iam.GetRoleInput{
+				RoleName: role.Role.RoleName,
+			})
+			if err != nil {
+				t.Errorf("Get role failed: %v", err)
+			}
+
+			assumeRolePolicy := new(AssumeRoleDocument)
+			err = json.Unmarshal([]byte(*gotRole.Role.AssumeRolePolicyDocument), assumeRolePolicy)
+			if err != nil {
+				t.Errorf("Unmarshal assume role policy failed: %v", err)
+			}
+			if !assumeRolePolicy.IsAllowOIDC(tt.args.oidcProviderArn, tt.args.namespace, tt.args.serviceAccountName) {
+				t.Errorf("Assume role policy want to be allowed oidc, but not")
+			}
+		})
+	}
+}
+
+func TestIamClient_Delete(t *testing.T) {
+	l, err := localstack.NewInstance()
+	if err != nil {
+		t.Fatalf("Could not connect to Docker %v", err)
+	}
+	if err := l.Start(); err != nil {
+		t.Fatalf("Could not start localstack %v", err)
+	}
+	defer l.Stop()
+	client := getMockIamClient(l)
+
+	// init ima role
+	assumeRolePolicy := NewAssumeRolePolicy(testOidcProviderArn, "default", "default")
+	doc, err := assumeRolePolicy.AssumeRoleDocumentPolicyDocument()
+
+	if err != nil {
+		t.Fatalf("New assume role policy doc failed: %v", err)
+	}
+	role, err := client.iamClient.CreateRole(&iam.CreateRoleInput{
+		RoleName:                 aws.String("test-delete-role"),
+		AssumeRolePolicyDocument: aws.String(doc),
+		Tags: []*iam.Tag{
+			{
+				Key:   aws.String("k"),
+				Value: aws.String("v"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Prepare iam role failed: %v", err)
+	}
+	type args struct {
+		ctx     context.Context
+		roleArn string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "delete role should work",
+			args: args{
+				ctx:     context.Background(),
+				roleArn: *role.Role.Arn,
+			},
+		},
+		{
+			name: "delete role repeated should not work",
+			args: args{
+				ctx:     context.Background(),
+				roleArn: *role.Role.Arn,
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := client
+			if err := c.Delete(tt.args.ctx, tt.args.roleArn); (err != nil) != tt.wantErr {
+				t.Errorf("IamClient.Delete() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

@@ -182,6 +182,7 @@ func (c *IamClient) UpdateInlinePolicy(ctx context.Context, roleName string, pol
 
 	_, err = c.iamClient.PutRolePolicy(&iam.PutRolePolicyInput{
 		PolicyDocument: aws.String(policyDocument),
+		PolicyName:     aws.String(c.getInlinePolicyName(roleName)),
 		RoleName:       aws.String(roleName),
 	})
 
@@ -191,6 +192,7 @@ func (c *IamClient) UpdateInlinePolicy(ctx context.Context, roleName string, pol
 func (c *IamClient) transfer(role *iam.Role, managedPolicyArns []string, inlinePolicy *iam.PolicyDetail) (*IamRole, error) {
 	res := new(IamRole)
 	res.RoleArn = *role.Arn
+	res.RoleName = *role.RoleName
 	if role.AssumeRolePolicyDocument != nil {
 		var entity AssumeRoleDocument
 		if err := json.Unmarshal([]byte(*role.AssumeRolePolicyDocument), &entity); err != nil {
@@ -235,25 +237,24 @@ func (c *IamClient) Get(ctx context.Context, roleName string) (*IamRole, error) 
 		return nil, errors.Wrap(err, "List attached role policies failed")
 	}
 	var managedPolicyArns []string
-	inlinePolicyName := c.getInlinePolicyName(roleName)
-	foundInlinePolicy := false
 	for _, p := range policiesOut.AttachedPolicies {
-		if p.PolicyName != nil && *p.PolicyName == inlinePolicyName {
-			foundInlinePolicy = true
-		} else {
-			managedPolicyArns = append(managedPolicyArns, *p.PolicyArn)
-		}
+		managedPolicyArns = append(managedPolicyArns, *p.PolicyArn)
 	}
 
-	inlinePolicyDetail := new(iam.PolicyDetail)
-	if foundInlinePolicy {
-		ipo, err := c.iamClient.GetRolePolicy(&iam.GetRolePolicyInput{
-			RoleName:   aws.String(roleName),
-			PolicyName: aws.String(inlinePolicyName),
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "Get inline policy failed")
-		}
+	inlinePolicyName := c.getInlinePolicyName(roleName)
+	ipo, err := c.iamClient.GetRolePolicy(&iam.GetRolePolicyInput{
+		RoleName:   aws.String(roleName),
+		PolicyName: aws.String(inlinePolicyName),
+	})
+	// err is not no such entities
+	if err != nil && !strings.Contains(err.Error(), iam.ErrCodeNoSuchEntityException) {
+		return nil, errors.Wrap(err, "Get inline policy failed")
+	}
+	var inlinePolicyDetail *iam.PolicyDetail
+	// not found inline policy
+	if ipo != nil {
+		inlinePolicyDetail = new(iam.PolicyDetail)
+
 		inlinePolicyDetail.PolicyDocument = ipo.PolicyDocument
 		inlinePolicyDetail.PolicyName = ipo.PolicyName
 	}
