@@ -413,6 +413,7 @@ func (r *IamRoleServiceAccountReconciler) updateExternalResourcesIfNeed(ctx cont
 	}
 
 	wantRole := aws.NewIamRole(r.OIDC, irsa)
+	// TODO: set tag cause it is empty now
 
 	// compare spec and iam role detail
 

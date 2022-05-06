@@ -56,16 +56,18 @@ func (i *IamRole) fromIRSA(oidcProviderArn string, irsa *irsav1alpha1.IamRoleSer
 
 	policy := irsa.Spec.Policy
 
-	i.ManagedPolicies = policy.ManagedPolicies
-	if policy.InlinePolicy != nil {
-		ip := policy.InlinePolicy
-		stses := policy.InlinePolicy.Statements
-		i.InlinePolicy = &RoleDocument{
-			Version:   ip.Version,
-			Statement: make([]RoleStatement, len(stses)),
-		}
-		for idx, sts := range stses {
-			i.InlinePolicy.Statement[idx] = roleStatementFromIRSAStatementSpec(&sts)
+	if policy != nil {
+		i.ManagedPolicies = policy.ManagedPolicies
+		if policy.InlinePolicy != nil {
+			ip := policy.InlinePolicy
+			stses := policy.InlinePolicy.Statements
+			i.InlinePolicy = &RoleDocument{
+				Version:   ip.Version,
+				Statement: make([]RoleStatement, len(stses)),
+			}
+			for idx, sts := range stses {
+				i.InlinePolicy.Statement[idx] = roleStatementFromIRSAStatementSpec(&sts)
+			}
 		}
 	}
 
