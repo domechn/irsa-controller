@@ -60,7 +60,7 @@ func (i *IamRole) fromIRSA(oidcProviderArn string, irsa *irsav1alpha1.IamRoleSer
 		i.ManagedPolicies = policy.ManagedPolicies
 		if policy.InlinePolicy != nil {
 			ip := policy.InlinePolicy
-			stses := policy.InlinePolicy.Statements
+			stses := policy.InlinePolicy.Statement
 			i.InlinePolicy = &RoleDocument{
 				Version:   ip.Version,
 				Statement: make([]RoleStatement, len(stses)),

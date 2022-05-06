@@ -50,8 +50,8 @@ type PolicySpec struct {
 
 // InlinePolicySpec defines the policy create within iam role
 type InlinePolicySpec struct {
-	Version    string          `json:"version"`
-	Statements []StatementSpec `json:"statements"`
+	Version   string          `json:"version"`
+	Statement []StatementSpec `json:"statement"`
 }
 
 type StatementConditionSpec map[string]map[string]string

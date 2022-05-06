@@ -73,7 +73,7 @@ func TestIamClient_Create(t *testing.T) {
 							},
 							InlinePolicy: &v1alpha1.InlinePolicySpec{
 								Version: "2012-10-17",
-								Statements: []v1alpha1.StatementSpec{
+								Statement: []v1alpha1.StatementSpec{
 									{
 										Resource: []string{
 											"*",
@@ -106,7 +106,7 @@ func TestIamClient_Create(t *testing.T) {
 						Policy: &v1alpha1.PolicySpec{
 							InlinePolicy: &v1alpha1.InlinePolicySpec{
 								Version: "2012-10-17",
-								Statements: []v1alpha1.StatementSpec{
+								Statement: []v1alpha1.StatementSpec{
 									{
 										Resource: []string{
 											"*",

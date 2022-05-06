@@ -34,7 +34,7 @@ func TestNewIamRole(t *testing.T) {
 							},
 							InlinePolicy: &irsav1alpha1.InlinePolicySpec{
 								Version: "2012-10-17",
-								Statements: []irsav1alpha1.StatementSpec{
+								Statement: []irsav1alpha1.StatementSpec{
 									{
 										Resource: []string{"*"},
 										Action:   []string{"*"},
