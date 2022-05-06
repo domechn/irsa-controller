@@ -260,7 +260,7 @@ func getMockIamClient(l *localstack.Instance) *IamClient {
 	if err != nil {
 		log.Fatalf("Cloud not get configuration from localstack %v", err)
 	}
-	return newIamClient(testClusterName, testIamRolePrefix, []string{}, iam.New(configurationForTest))
+	return NewIamClientWithIamAPI(testClusterName, testIamRolePrefix, []string{}, iam.New(configurationForTest))
 }
 
 func TestIamClient_RoleName(t *testing.T) {

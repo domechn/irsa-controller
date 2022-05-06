@@ -49,13 +49,20 @@ var (
 // IamRoleServiceAccountReconciler reconciles a IamRoleServiceAccount object
 type IamRoleServiceAccountReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	scheme *runtime.Scheme
 
-	OIDC string
+	oidc string
 
-	IamRolePrefix string
-	ClusterName   string
-	IamRoleClient *aws.IamClient
+	iamRoleClient *aws.IamClient
+}
+
+func NewIamRoleServiceAccountReconciler(cli client.Client, scheme *runtime.Scheme, oidcProviderArn string, iamRoleClient *aws.IamClient) *IamRoleServiceAccountReconciler {
+	return &IamRoleServiceAccountReconciler{
+		Client:        cli,
+		scheme:        scheme,
+		oidc:          oidcProviderArn,
+		iamRoleClient: iamRoleClient,
+	}
 }
 
 //+kubebuilder:rbac:groups=irsa.domc.me,resources=iamroleserviceaccounts,verbs=get;list;watch;create;update;patch;delete
@@ -249,7 +256,7 @@ func (r *IamRoleServiceAccountReconciler) finalize(ctx context.Context, irsa *ir
 }
 
 func (r *IamRoleServiceAccountReconciler) checkExternalResources(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount) (irsav1alpha1.IrsaCondition, error) {
-	role, err := r.IamRoleClient.Get(ctx, r.IamRoleClient.RoleName(irsa))
+	role, err := r.iamRoleClient.Get(ctx, r.iamRoleClient.RoleName(irsa))
 	if err != nil {
 		// TODO: Distinguish between roles because they don't exist and because they don't have permissions
 		// if err is not not found
@@ -277,12 +284,12 @@ func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Co
 	}()
 
 	if roleName == "" {
-		roleArn, err = r.IamRoleClient.Create(ctx, r.OIDC, irsa)
+		roleArn, err = r.iamRoleClient.Create(ctx, r.oidc, irsa)
 		if err != nil {
 			// if role already exists, check its tags, if its tag contains `irsa-controller: y` , update it. Else return error
 			// TODO fix type of ErrCodeEntityAlreadyExistsException
 			if gerrors.As(err, iam.ErrCodeEntityAlreadyExistsException) {
-				role, err := r.IamRoleClient.Get(ctx, r.IamRoleClient.RoleName(irsa))
+				role, err := r.iamRoleClient.Get(ctx, r.iamRoleClient.RoleName(irsa))
 				if err != nil {
 					return gerrors.Wrap(err, "Iam has already exists and cannot be getten")
 				}
@@ -296,14 +303,14 @@ func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Co
 	}
 
 	// update its trust entities
-	role, err := r.IamRoleClient.Get(ctx, roleName)
+	role, err := r.iamRoleClient.Get(ctx, roleName)
 	roleArn = role.RoleArn
 	if err != nil {
 		return gerrors.Wrap(err, "Get iam role failed")
 	}
 
-	if !role.AssumeRolePolicy.IsAllowOIDC(r.OIDC, irsa.GetNamespace(), irsa.GetName()) {
-		if err := r.IamRoleClient.AllowServiceAccountAccess(ctx, role, r.OIDC, irsa.GetNamespace(), irsa.GetName()); err != nil {
+	if !role.AssumeRolePolicy.IsAllowOIDC(r.oidc, irsa.GetNamespace(), irsa.GetName()) {
+		if err := r.iamRoleClient.AllowServiceAccountAccess(ctx, role, r.oidc, irsa.GetNamespace(), irsa.GetName()); err != nil {
 			return gerrors.Wrap(err, "Allow sa access iam role failed in create")
 		}
 	}
@@ -342,7 +349,7 @@ func (r *IamRoleServiceAccountReconciler) reconcileServiceAccount(ctx context.Co
 	sa.Annotations[irsaAnnotationKey] = roleArn
 	if err != nil {
 		if errors.IsNotFound(err) {
-			if err := ctrl.SetControllerReference(irsa, &sa, r.Scheme); err != nil {
+			if err := ctrl.SetControllerReference(irsa, &sa, r.scheme); err != nil {
 				return gerrors.Wrap(err, "Set controller reference failed")
 			}
 
@@ -406,13 +413,13 @@ func (r *IamRoleServiceAccountReconciler) updateExternalResourcesIfNeed(ctx cont
 		return ErrIamRoleNotCreated
 	}
 	roleName := aws.RoleNameByArn(roleArn)
-	gotRole, err := r.IamRoleClient.Get(ctx, roleName)
+	gotRole, err := r.iamRoleClient.Get(ctx, roleName)
 
 	if err != nil {
 		return gerrors.Wrap(err, "Get iam role by arn failed")
 	}
 
-	wantRole := aws.NewIamRole(r.OIDC, irsa)
+	wantRole := aws.NewIamRole(r.oidc, irsa)
 	// TODO: set tag cause it is empty now
 
 	// compare spec and iam role detail
@@ -451,31 +458,31 @@ func (r *IamRoleServiceAccountReconciler) updateExternalResourcesIfNeed(ctx cont
 			}
 		}
 
-		if err := r.IamRoleClient.AttachRolePolicy(ctx, roleName, attaches); err != nil {
+		if err := r.iamRoleClient.AttachRolePolicy(ctx, roleName, attaches); err != nil {
 			return gerrors.Wrap(err, "Sync missing managed roles failed")
 		}
-		if err := r.IamRoleClient.DetachRolePolicy(ctx, roleName, deAttaches); err != nil {
+		if err := r.iamRoleClient.DetachRolePolicy(ctx, roleName, deAttaches); err != nil {
 			return gerrors.Wrap(err, "Sync overflow managed roles failed")
 		}
 	}
 
 	if !reflect.DeepEqual(gotRole.InlinePolicy, wantRole.InlinePolicy) {
-		err = r.IamRoleClient.UpdateInlinePolicy(ctx, roleName, wantRole.InlinePolicy)
+		err = r.iamRoleClient.UpdateInlinePolicy(ctx, roleName, wantRole.InlinePolicy)
 		if err != nil {
 			return gerrors.Wrap(err, "Sync inline policy failed")
 		}
 	}
 
 	if !reflect.DeepEqual(gotRole.AssumeRolePolicy, wantRole.AssumeRolePolicy) {
-		assumeRolePolicy := aws.NewAssumeRolePolicy(r.OIDC, irsa.GetNamespace(), irsa.GetName())
-		err = r.IamRoleClient.UpdateAssumePolicy(ctx, roleName, &assumeRolePolicy)
+		assumeRolePolicy := aws.NewAssumeRolePolicy(r.oidc, irsa.GetNamespace(), irsa.GetName())
+		err = r.iamRoleClient.UpdateAssumePolicy(ctx, roleName, &assumeRolePolicy)
 		if err != nil {
 			return gerrors.Wrap(err, "Sync assume role policy failed")
 		}
 	}
 
 	if !reflect.DeepEqual(gotRole.Tags, wantRole.Tags) {
-		err = r.IamRoleClient.UpdateTags(ctx, roleName, wantRole.Tags)
+		err = r.iamRoleClient.UpdateTags(ctx, roleName, wantRole.Tags)
 		if err != nil {
 			return gerrors.Wrap(err, "Sync iam role tag failed")
 		}
@@ -493,12 +500,12 @@ func (r *IamRoleServiceAccountReconciler) updateExternalIamRoleIfNeed(ctx contex
 		return nil
 	}
 
-	role, err := r.IamRoleClient.Get(ctx, roleName)
+	role, err := r.iamRoleClient.Get(ctx, roleName)
 	if err != nil {
 		return gerrors.Wrap(err, "Get role failed")
 	}
-	if !role.AssumeRolePolicy.IsAllowOIDC(r.OIDC, irsa.GetNamespace(), irsa.GetName()) {
-		if err := r.IamRoleClient.AllowServiceAccountAccess(ctx, role, r.OIDC, irsa.GetNamespace(), irsa.GetName()); err != nil {
+	if !role.AssumeRolePolicy.IsAllowOIDC(r.oidc, irsa.GetNamespace(), irsa.GetName()) {
+		if err := r.iamRoleClient.AllowServiceAccountAccess(ctx, role, r.oidc, irsa.GetNamespace(), irsa.GetName()); err != nil {
 			return gerrors.Wrap(err, "Allow sa access iam role failed in update")
 		}
 	}
@@ -518,7 +525,7 @@ func (r *IamRoleServiceAccountReconciler) deleteExternalResources(ctx context.Co
 		return nil
 	}
 	// clean aws iam role
-	if err := r.IamRoleClient.Delete(ctx, roleArn); err != nil {
+	if err := r.iamRoleClient.Delete(ctx, roleArn); err != nil {
 		return gerrors.Wrap(err, "Delete iam role failed")
 	}
 	return nil

@@ -103,14 +103,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.IamRoleServiceAccountReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		OIDC:          oidcProviderArn,
-		IamRolePrefix: iamRolePrefix,
-		ClusterName:   clusterName,
-		IamRoleClient: aws.NewIamClient(clusterName, iamRolePrefix, additionTagsArgs),
-	}).SetupWithManager(mgr); err != nil {
+	irsar := controllers.NewIamRoleServiceAccountReconciler(mgr.GetClient(), mgr.GetScheme(), oidcProviderArn, aws.NewIamClient(clusterName, iamRolePrefix, additionTagsArgs))
+
+	if err = irsar.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "IamRoleServiceAccount")
 		os.Exit(1)
 	}
