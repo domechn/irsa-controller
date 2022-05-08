@@ -230,7 +230,7 @@ func (c *IamClient) Get(ctx context.Context, roleName string) (*IamRole, error) 
 		return nil, errors.Wrap(err, "Get role with context failed")
 	}
 	// TODO: paging if the count of polices over than 100
-	policiesOut, err := c.iamClient.ListAttachedRolePolicies(&iam.ListAttachedRolePoliciesInput{
+	policiesOut, err := c.iamClient.ListAttachedRolePoliciesWithContext(ctx, &iam.ListAttachedRolePoliciesInput{
 		RoleName: aws.String(roleName),
 	})
 	if err != nil {
@@ -242,7 +242,7 @@ func (c *IamClient) Get(ctx context.Context, roleName string) (*IamRole, error) 
 	}
 
 	inlinePolicyName := c.getInlinePolicyName(roleName)
-	ipo, err := c.iamClient.GetRolePolicy(&iam.GetRolePolicyInput{
+	ipo, err := c.iamClient.GetRolePolicyWithContext(ctx, &iam.GetRolePolicyInput{
 		RoleName:   aws.String(roleName),
 		PolicyName: aws.String(inlinePolicyName),
 	})

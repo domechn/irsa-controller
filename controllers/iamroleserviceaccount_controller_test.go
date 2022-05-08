@@ -19,11 +19,15 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"log"
 	"testing"
 
 	"domc.me/irsa-controller/api/v1alpha1"
 	irsav1alpha1 "domc.me/irsa-controller/api/v1alpha1"
 	"domc.me/irsa-controller/pkg/aws"
+	goAws "github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/request"
+	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -33,32 +37,77 @@ import (
 
 type mockedIamClient struct {
 	iamiface.IAMAPI
+	mockRoles            map[string]*iam.Role
+	mockAttachedPolicies map[string][]*iam.AttachedPolicy
+}
+
+func NewMockedIamClient() *mockedIamClient {
+	return &mockedIamClient{
+		mockRoles:            make(map[string]*iam.Role),
+		mockAttachedPolicies: make(map[string][]*iam.AttachedPolicy),
+	}
+}
+
+func (m *mockedIamClient) CreateRole(input *iam.CreateRoleInput) (*iam.CreateRoleOutput, error) {
+	m.mockRoles[*input.RoleName] = &iam.Role{
+		RoleName:                 input.RoleName,
+		Arn:                      goAws.String(fmt.Sprintf("arn:aws:iam::000000000000:role/%s", *input.RoleName)),
+		AssumeRolePolicyDocument: input.AssumeRolePolicyDocument,
+	}
+	return &iam.CreateRoleOutput{
+		Role: m.mockRoles[*input.RoleName],
+	}, nil
+}
+
+func (m *mockedIamClient) GetRoleWithContext(ctx context.Context, input *iam.GetRoleInput, opts ...request.Option) (*iam.GetRoleOutput, error) {
+	return &iam.GetRoleOutput{
+		Role: m.mockRoles[*input.RoleName],
+	}, nil
+}
+
+func (m *mockedIamClient) ListAttachedRolePoliciesWithContext(ctx context.Context, input *iam.ListAttachedRolePoliciesInput, opts ...request.Option) (*iam.ListAttachedRolePoliciesOutput, error) {
+	return &iam.ListAttachedRolePoliciesOutput{
+		AttachedPolicies: m.mockAttachedPolicies[*input.RoleName],
+	}, nil
+}
+
+func (m *mockedIamClient) GetRolePolicyWithContext(ctx context.Context, input *iam.GetRolePolicyInput, opts ...request.Option) (*iam.GetRolePolicyOutput, error) {
+	return &iam.GetRolePolicyOutput{
+		RoleName:       input.RoleName,
+		PolicyName:     input.PolicyName,
+		PolicyDocument: goAws.String(`{"Version":"2012-10-17","Statement":[]}`),
+	}, nil
+}
+
+func (m *mockedIamClient) UpdateAssumeRolePolicyWithContext(ctx context.Context, input *iam.UpdateAssumeRolePolicyInput, opts ...request.Option) (*iam.UpdateAssumeRolePolicyOutput, error) {
+	m.mockRoles[*input.RoleName].AssumeRolePolicyDocument = input.PolicyDocument
+	return &iam.UpdateAssumeRolePolicyOutput{}, nil
+}
+
+func getReconciler(mic *mockedIamClient, mockIrsa *irsav1alpha1.IamRoleServiceAccount) *IamRoleServiceAccountReconciler {
+	scheme := runtime.NewScheme()
+	if err := irsav1alpha1.AddToScheme(scheme); err != nil {
+		log.Fatalf("Unable to add irsa scheme: (%v)", err)
+	}
+
+	objs := []runtime.Object{mockIrsa}
+	fakeClient := fake.NewFakeClientWithScheme(scheme, objs...)
+
+	oidc := "test"
+	iamRoleClient := aws.NewIamClientWithIamAPI("test", "test", []string{}, mic)
+
+	r := NewIamRoleServiceAccountReconciler(fakeClient, scheme, oidc, iamRoleClient)
+	return r
 }
 
 func TestIamRoleServiceAccountReconciler_updateIrsaStatus(t *testing.T) {
-	scheme := runtime.NewScheme()
-	if err := irsav1alpha1.AddToScheme(scheme); err != nil {
-		t.Fatalf("Unable to add irsa scheme: (%v)", err)
-	}
-
 	irsa := &irsav1alpha1.IamRoleServiceAccount{
-		// TypeMeta: metav1.TypeMeta{
-		// 	APIVersion: "v1alpha1",
-		// 	Kind:       "IamRoleServiceAccount",
-		// },
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "irsa",
 			Namespace: "default",
 		},
 	}
-	objs := []runtime.Object{irsa}
-	fakeClient := fake.NewFakeClientWithScheme(scheme, objs...)
-
-	oidc := "test"
-	iamRoleClient := aws.NewIamClientWithIamAPI("test", "test", []string{}, &mockedIamClient{})
-
-	r := NewIamRoleServiceAccountReconciler(fakeClient, scheme, oidc, iamRoleClient)
-
+	r := getReconciler(NewMockedIamClient(), irsa)
 	// 1. update status to failed should work
 	updated := r.updateIrsaStatus(context.Background(), irsa, irsav1alpha1.IrsaFailed, fmt.Errorf("error"))
 	if !updated {
@@ -84,5 +133,41 @@ func TestIamRoleServiceAccountReconciler_updateIrsaStatus(t *testing.T) {
 	if !updated {
 		t.Fatal("Update same status but differnet errs should work")
 	}
+
+}
+
+func TestIamRoleServiceAccountReconciler_updateExternalResourcesIfNeed(t *testing.T) {
+	irsa := &irsav1alpha1.IamRoleServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "irsa",
+			Namespace: "default",
+		},
+	}
+	oidc := "test"
+	mic := NewMockedIamClient()
+	r := getReconciler(mic, irsa)
+
+	externalRoleName := "external-role"
+	// 1. external iam role allow irsa access
+	externalRole, err := mic.CreateRole(&iam.CreateRoleInput{
+		RoleName:                 goAws.String(externalRoleName),
+		AssumeRolePolicyDocument: goAws.String(`{"Version":"2012-10-17","Statement":[]}`),
+	})
+	if err != nil {
+		t.Fatalf("Create external role failed: %v", err)
+	}
+	irsa.Spec.RoleName = *externalRole.Role.RoleName
+	err = r.updateExternalIamRoleIfNeed(context.Background(), irsa)
+	if err != nil {
+		t.Fatalf("updateExternalIamRoleIfNeed failed: %v", err)
+	}
+	gotExternalRole, err := r.iamRoleClient.Get(context.Background(), irsa.Spec.RoleName)
+	if err != nil {
+		t.Fatalf("Get external role failed: %v", err)
+	}
+	if !gotExternalRole.AssumeRolePolicy.IsAllowOIDC(oidc, irsa.GetNamespace(), irsa.GetName()) {
+		t.Fatalf("External role should allow oidc, but not")
+	}
+	// r.iamRoleClient.Create(context.Background(), oidc, irsa*irsav1alpha1.IamRoleServiceAccount)
 
 }
