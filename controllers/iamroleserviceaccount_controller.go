@@ -338,6 +338,18 @@ func (r *IamRoleServiceAccountReconciler) reconcileServiceAccount(ctx context.Co
 		return []client.UpdateOption{}
 	}
 
+	shouldReconcile := func() bool {
+		// if dryRun is true, always should reconcile
+		if dryRun {
+			return true
+		}
+		// role is not created, no need to reconcile sa
+		if roleArn == "" || irsa.Status.Condition != irsav1alpha1.IrsaOK {
+			return false
+		}
+		return true
+	}
+
 	err := r.Client.Get(ctx, types.NamespacedName{
 		Namespace: namespace,
 		Name:      saName,
@@ -354,6 +366,10 @@ func (r *IamRoleServiceAccountReconciler) reconcileServiceAccount(ctx context.Co
 			if err := ctrl.SetControllerReference(irsa, &sa, r.scheme); err != nil {
 				return gerrors.Wrap(err, "Set controller reference failed")
 			}
+			if !shouldReconcile() {
+				// no need to reconcile
+				return nil
+			}
 
 			return r.Client.Create(ctx, &sa, dryRunCreateOption(dryRun)...)
 		}
@@ -364,11 +380,11 @@ func (r *IamRoleServiceAccountReconciler) reconcileServiceAccount(ctx context.Co
 		return ErrServiceAccountConflict
 	}
 
-	// role is not created, no need to reconcile sa
-	if roleArn == "" || irsa.Status.Condition != irsav1alpha1.IrsaOK {
+	if !shouldReconcile() {
+		// no need to reconcile
 		return nil
 	}
-
+	// TODO: no need to update if sa not changed
 	return r.Client.Update(ctx, &sa, dryRunUpdateOption(dryRun)...)
 }
 

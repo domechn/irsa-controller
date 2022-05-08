@@ -263,4 +263,90 @@ func TestIamRoleServiceAccountReconciler_createExternalResources(t *testing.T) {
 	if externalRole.IsManagedByIrsaController() || !externalRole.AssumeRolePolicy.IsAllowOIDC("test", irsa.GetNamespace(), irsa.GetName()) {
 		t.Fatal("2 role should be assumed by irsa and not managed by irsa, but not")
 	}
+
+	// 3. unknown external role
+	irsa.Spec.RoleName = "unknown-role"
+	err = r.createExternalResources(context.Background(), irsa)
+	if err == nil {
+		t.Fatalf("3 create unknown role should failed")
+	}
+}
+
+func TestIamRoleServiceAccountReconciler_reconcileServiceAccount(t *testing.T) {
+	roleArn := "arn:aws:iam::000000000000:role/mock-role"
+	irsa := &irsav1alpha1.IamRoleServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "irsa",
+			Namespace: "default",
+		},
+		Status: irsav1alpha1.IamRoleServiceAccountStatus{
+			RoleArn:   roleArn,
+			Condition: irsav1alpha1.IrsaOK,
+		},
+	}
+	mic := aws.NewMockedIamClient()
+	r := getReconciler(mic, irsa)
+
+	// 1. create service account should work
+	err := r.reconcileServiceAccount(context.Background(), irsa, false)
+	if err != nil {
+		t.Fatalf("1 reconcileServiceAccount failed: %v", err)
+	}
+	sa := &corev1.ServiceAccount{}
+	err = r.Get(context.Background(), types.NamespacedName{Namespace: irsa.GetNamespace(), Name: irsa.GetName()}, sa)
+	if err != nil {
+		t.Fatalf("1 get sa failed: %v", err)
+	}
+	// irsa should own sa
+	if !r.serviceAccountNameIsOwnedByIrsa(sa, irsa) {
+		t.Fatalf("1 service account should be owned by irsa, but not")
+	}
+
+	// 2. service account exists and not managed by irsa
+	sa.OwnerReferences = []metav1.OwnerReference{}
+	err = r.Update(context.Background(), sa)
+	if err != nil {
+		t.Fatalf("2 update service account failed: %v", err)
+	}
+
+	err = r.reconcileServiceAccount(context.Background(), irsa, true)
+	if err != ErrServiceAccountConflict {
+		t.Fatalf("2 service account exists should get conflict err, but get: %v", err)
+	}
+
+	// 3. sync service account when it was updated
+	sa.Annotations = make(map[string]string)
+	err = ctrl.SetControllerReference(irsa, sa, r.scheme)
+	if err != nil {
+		t.Fatalf("3 SetControllerReference failed: %v", err)
+	}
+	err = r.Update(context.Background(), sa)
+	if err != nil {
+		t.Fatalf("3 update service account failed: %v", err)
+	}
+
+	err = r.reconcileServiceAccount(context.Background(), irsa, false)
+	if err != nil {
+		t.Fatalf("3 reconcileServiceAccount failed: %v", err)
+	}
+	err = r.Get(context.Background(), types.NamespacedName{Namespace: irsa.GetNamespace(), Name: irsa.GetName()}, sa)
+	if err != nil {
+		t.Fatalf("3 get sa failed: %v", err)
+	}
+	// irsa should own sa
+	if !r.serviceAccountNameIsOwnedByIrsa(sa, irsa) || sa.Annotations[irsaAnnotationKey] != roleArn {
+		t.Fatalf("3 service account should be owned by irsa and be assumed, but not")
+	}
+
+	// 4. sa should not be created when irsa is not ok
+	irsa.Name = "new-irsa"
+	irsa.Status.Condition = v1alpha1.IrsaConflict
+	err = r.reconcileServiceAccount(context.Background(), irsa, false)
+	if err != nil {
+		t.Fatalf("4 reconcileServiceAccount failed: %v", err)
+	}
+	err = r.Get(context.Background(), types.NamespacedName{Namespace: irsa.GetNamespace(), Name: irsa.GetName()}, sa)
+	if !errors.IsNotFound(err) {
+		t.Fatalf("4 get service should get not found, but get: %v", err)
+	}
 }
