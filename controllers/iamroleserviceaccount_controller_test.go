@@ -26,71 +26,25 @@ import (
 	irsav1alpha1 "domc.me/irsa-controller/api/v1alpha1"
 	"domc.me/irsa-controller/pkg/aws"
 	goAws "github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/aws/aws-sdk-go/service/iam/iamiface"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-type mockedIamClient struct {
-	iamiface.IAMAPI
-	mockRoles            map[string]*iam.Role
-	mockAttachedPolicies map[string][]*iam.AttachedPolicy
-}
-
-func NewMockedIamClient() *mockedIamClient {
-	return &mockedIamClient{
-		mockRoles:            make(map[string]*iam.Role),
-		mockAttachedPolicies: make(map[string][]*iam.AttachedPolicy),
-	}
-}
-
-func (m *mockedIamClient) CreateRole(input *iam.CreateRoleInput) (*iam.CreateRoleOutput, error) {
-	m.mockRoles[*input.RoleName] = &iam.Role{
-		RoleName:                 input.RoleName,
-		Arn:                      goAws.String(fmt.Sprintf("arn:aws:iam::000000000000:role/%s", *input.RoleName)),
-		AssumeRolePolicyDocument: input.AssumeRolePolicyDocument,
-	}
-	return &iam.CreateRoleOutput{
-		Role: m.mockRoles[*input.RoleName],
-	}, nil
-}
-
-func (m *mockedIamClient) GetRoleWithContext(ctx context.Context, input *iam.GetRoleInput, opts ...request.Option) (*iam.GetRoleOutput, error) {
-	return &iam.GetRoleOutput{
-		Role: m.mockRoles[*input.RoleName],
-	}, nil
-}
-
-func (m *mockedIamClient) ListAttachedRolePoliciesWithContext(ctx context.Context, input *iam.ListAttachedRolePoliciesInput, opts ...request.Option) (*iam.ListAttachedRolePoliciesOutput, error) {
-	return &iam.ListAttachedRolePoliciesOutput{
-		AttachedPolicies: m.mockAttachedPolicies[*input.RoleName],
-	}, nil
-}
-
-func (m *mockedIamClient) GetRolePolicyWithContext(ctx context.Context, input *iam.GetRolePolicyInput, opts ...request.Option) (*iam.GetRolePolicyOutput, error) {
-	return &iam.GetRolePolicyOutput{
-		RoleName:       input.RoleName,
-		PolicyName:     input.PolicyName,
-		PolicyDocument: goAws.String(`{"Version":"2012-10-17","Statement":[]}`),
-	}, nil
-}
-
-func (m *mockedIamClient) UpdateAssumeRolePolicyWithContext(ctx context.Context, input *iam.UpdateAssumeRolePolicyInput, opts ...request.Option) (*iam.UpdateAssumeRolePolicyOutput, error) {
-	m.mockRoles[*input.RoleName].AssumeRolePolicyDocument = input.PolicyDocument
-	return &iam.UpdateAssumeRolePolicyOutput{}, nil
-}
-
-func getReconciler(mic *mockedIamClient, mockIrsa *irsav1alpha1.IamRoleServiceAccount) *IamRoleServiceAccountReconciler {
+func getReconciler(mic *aws.MockedIamClient, objs ...runtime.Object) *IamRoleServiceAccountReconciler {
 	scheme := runtime.NewScheme()
 	if err := irsav1alpha1.AddToScheme(scheme); err != nil {
 		log.Fatalf("Unable to add irsa scheme: (%v)", err)
 	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		log.Fatalf("Unable to add core v1 scheme: (%v)", err)
+	}
 
-	objs := []runtime.Object{mockIrsa}
 	fakeClient := fake.NewFakeClientWithScheme(scheme, objs...)
 
 	oidc := "test"
@@ -107,7 +61,7 @@ func TestIamRoleServiceAccountReconciler_updateIrsaStatus(t *testing.T) {
 			Namespace: "default",
 		},
 	}
-	r := getReconciler(NewMockedIamClient(), irsa)
+	r := getReconciler(aws.NewMockedIamClient(), irsa)
 	// 1. update status to failed should work
 	updated := r.updateIrsaStatus(context.Background(), irsa, irsav1alpha1.IrsaFailed, fmt.Errorf("error"))
 	if !updated {
@@ -144,7 +98,7 @@ func TestIamRoleServiceAccountReconciler_updateExternalResourcesIfNeed(t *testin
 		},
 	}
 	oidc := "test"
-	mic := NewMockedIamClient()
+	mic := aws.NewMockedIamClient()
 	r := getReconciler(mic, irsa)
 
 	externalRoleName := "external-role"
@@ -170,4 +124,103 @@ func TestIamRoleServiceAccountReconciler_updateExternalResourcesIfNeed(t *testin
 	}
 	// r.iamRoleClient.Create(context.Background(), oidc, irsa*irsav1alpha1.IamRoleServiceAccount)
 
+}
+
+func TestIamRoleServiceAccountReconciler_deleteServiceAccount(t *testing.T) {
+	irsa := &irsav1alpha1.IamRoleServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "irsa",
+			Namespace: "default",
+		},
+	}
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "irsa",
+			Namespace: "default",
+		},
+	}
+	mic := aws.NewMockedIamClient()
+	r := getReconciler(mic, irsa, sa)
+
+	// 1. irsa is not managed by irsa-controller, so it cannot be deleted
+	err := r.deleteServiceAccount(context.Background(), irsa)
+	if err != nil {
+		t.Fatalf("Delete service account failed: %v", err)
+	}
+
+	gotSA := &corev1.ServiceAccount{}
+	// should be getten
+	err = r.Client.Get(context.Background(), types.NamespacedName{Namespace: irsa.GetNamespace(), Name: irsa.GetName()}, gotSA)
+	if err != nil {
+		t.Fatalf("Get service account failed: %v", err)
+	}
+
+	// 2. irsa is manged by irsa-controller
+	err = ctrl.SetControllerReference(irsa, sa, r.scheme)
+	if err != nil {
+		t.Fatalf("Set controller reference failed: %v", err)
+	}
+	r2 := getReconciler(mic, irsa, sa)
+	err = r2.deleteServiceAccount(context.Background(), irsa)
+	if err != nil {
+		t.Fatalf("Delete service account 2 failed: %v", err)
+	}
+	err = r2.Client.Get(context.Background(), types.NamespacedName{Namespace: irsa.GetNamespace(), Name: irsa.GetName()}, gotSA)
+	if !errors.IsNotFound(err) {
+		t.Fatalf("Service account should be deleted")
+	}
+}
+
+func TestIamRoleServiceAccountReconciler_checkExternalResources(t *testing.T) {
+	irsa := &irsav1alpha1.IamRoleServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "irsa",
+			Namespace: "default",
+		},
+	}
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "irsa",
+			Namespace: "default",
+		},
+	}
+	mic := aws.NewMockedIamClient()
+	r := getReconciler(mic, irsa, sa)
+
+	// 1. iam role not found, check pass
+	status, err := r.checkExternalResources(context.Background(), irsa)
+	if err != nil || status != irsav1alpha1.IrsaProgressing {
+		t.Fatalf("Check external resource failed: %s,%v", status, err)
+	}
+
+	// 2. iam role exists and not manged by irsa-controller
+	role := &iam.CreateRoleInput{
+		RoleName:                 goAws.String(r.iamRoleClient.RoleName(irsa)),
+		AssumeRolePolicyDocument: goAws.String(`{"Version":"2012-10-17","Statement":[]}`),
+	}
+	_, err = mic.CreateRole(role)
+	if err != nil {
+		t.Fatalf("Create irsa role failed: %v", err)
+	}
+
+	status, err = r.checkExternalResources(context.Background(), irsa)
+	if err == nil || status != irsav1alpha1.IrsaConflict {
+		t.Fatalf("Iam role exists and should return conflict, but got: %s", status)
+	}
+
+	// 3. iam role exists and manged by irsa-controller
+	role.Tags = []*iam.Tag{{
+		Key:   goAws.String(aws.IrsaContollerManagedTagKey),
+		Value: goAws.String(aws.IrsaContollerManagedTagVal),
+	}}
+
+	_, err = mic.CreateRole(role)
+	if err != nil {
+		t.Fatalf("Update irsa role failed: %v", err)
+	}
+
+	status, err = r.checkExternalResources(context.Background(), irsa)
+	if err != nil || status != irsav1alpha1.IrsaProgressing {
+		t.Fatalf("Iam role exists and should return ok, but got: %s, %v", status, err)
+	}
 }

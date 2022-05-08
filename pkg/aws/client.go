@@ -65,7 +65,8 @@ func (c *IamClient) Create(ctx context.Context, oidcProvider string, irsa *v1alp
 	output, err := c.iamClient.CreateRoleWithContext(ctx, &iam.CreateRoleInput{
 		RoleName:                 aws.String(roleName),
 		AssumeRolePolicyDocument: aws.String(assumeRoleDocument),
-		Tags:                     c.getIamRoleTags(nil),
+		// TODO: support define tags in irsa: irsa.Spec.Tags
+		Tags: c.getIamRoleTags(nil),
 	})
 	if err != nil {
 		return "", errors.Wrap(err, "Create role in aws failed")

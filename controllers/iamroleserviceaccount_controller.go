@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/iam"
@@ -258,7 +259,10 @@ func (r *IamRoleServiceAccountReconciler) finalize(ctx context.Context, irsa *ir
 func (r *IamRoleServiceAccountReconciler) checkExternalResources(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount) (irsav1alpha1.IrsaCondition, error) {
 	role, err := r.iamRoleClient.Get(ctx, r.iamRoleClient.RoleName(irsa))
 	if err != nil {
-		// TODO: Distinguish between roles because they don't exist and because they don't have permissions
+		// role not found, return no error
+		if strings.Contains(err.Error(), iam.ErrCodeNoSuchEntityException) {
+			return irsav1alpha1.IrsaProgressing, nil
+		}
 		// if err is not not found
 		if err != nil {
 			return irsav1alpha1.IrsaForbidden, err
