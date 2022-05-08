@@ -301,14 +301,15 @@ func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Co
 
 			return gerrors.Wrap(err, "Create iam role failed")
 		}
+		roleName = aws.RoleNameByArn(roleArn)
 	}
 
 	// update its trust entities
 	role, err := r.iamRoleClient.Get(ctx, roleName)
-	roleArn = role.RoleArn
 	if err != nil {
 		return gerrors.Wrap(err, "Get iam role failed")
 	}
+	roleArn = role.RoleArn
 
 	if !role.AssumeRolePolicy.IsAllowOIDC(r.oidc, irsa.GetNamespace(), irsa.GetName()) {
 		if err := r.iamRoleClient.AllowServiceAccountAccess(ctx, role, r.oidc, irsa.GetNamespace(), irsa.GetName()); err != nil {

@@ -178,14 +178,8 @@ func TestIamRoleServiceAccountReconciler_checkExternalResources(t *testing.T) {
 			Namespace: "default",
 		},
 	}
-	sa := &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "irsa",
-			Namespace: "default",
-		},
-	}
 	mic := aws.NewMockedIamClient()
-	r := getReconciler(mic, irsa, sa)
+	r := getReconciler(mic, irsa)
 
 	// 1. iam role not found, check pass
 	status, err := r.checkExternalResources(context.Background(), irsa)
@@ -222,5 +216,51 @@ func TestIamRoleServiceAccountReconciler_checkExternalResources(t *testing.T) {
 	status, err = r.checkExternalResources(context.Background(), irsa)
 	if err != nil || status != irsav1alpha1.IrsaProgressing {
 		t.Fatalf("Iam role exists and should return ok, but got: %s, %v", status, err)
+	}
+}
+
+func TestIamRoleServiceAccountReconciler_createExternalResources(t *testing.T) {
+	irsa := &irsav1alpha1.IamRoleServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "irsa",
+			Namespace: "default",
+		},
+	}
+	mic := aws.NewMockedIamClient()
+	r := getReconciler(mic, irsa)
+
+	// 1. create iam role if role is not exist
+	err := r.createExternalResources(context.Background(), irsa)
+	if err != nil {
+		t.Fatalf("1 create external resource failed: %v", err)
+	}
+	role, err := r.iamRoleClient.Get(context.Background(), r.iamRoleClient.RoleName(irsa))
+	if err != nil {
+		t.Fatalf("1 get iam role failed: %v", err)
+	}
+	if !role.IsManagedByIrsaController() || !role.AssumeRolePolicy.IsAllowOIDC("test", irsa.GetNamespace(), irsa.GetName()) {
+		t.Fatal("1 role should be assumed by irsa, but not")
+	}
+
+	// 2. make external role can be assumed by irsa
+	externalRoleOut, err := mic.CreateRole(&iam.CreateRoleInput{
+		RoleName:                 goAws.String("external-role"),
+		AssumeRolePolicyDocument: goAws.String(`{"Version":"2012-10-17","Statement":[]}`),
+	})
+	if err != nil {
+		t.Fatalf("2 create external role failed: %v", err)
+	}
+	irsa.Spec.RoleName = *externalRoleOut.Role.RoleName
+	err = r.createExternalResources(context.Background(), irsa)
+	if err != nil {
+		t.Fatalf("2 create external resource failed: %v", err)
+	}
+	externalRole, err := r.iamRoleClient.Get(context.Background(), *externalRoleOut.Role.RoleName)
+	if err != nil {
+		t.Fatalf("2 get iam role failed: %v", err)
+	}
+	// should not add irsa tag
+	if externalRole.IsManagedByIrsaController() || !externalRole.AssumeRolePolicy.IsAllowOIDC("test", irsa.GetNamespace(), irsa.GetName()) {
+		t.Fatal("2 role should be assumed by irsa and not managed by irsa, but not")
 	}
 }

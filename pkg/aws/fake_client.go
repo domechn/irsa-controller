@@ -35,6 +35,10 @@ func (m *MockedIamClient) CreateRole(input *iam.CreateRoleInput) (*iam.CreateRol
 	}, nil
 }
 
+func (m *MockedIamClient) CreateRoleWithContext(ctx context.Context, input *iam.CreateRoleInput, opts ...request.Option) (*iam.CreateRoleOutput, error) {
+	return m.CreateRole(input)
+}
+
 func (m *MockedIamClient) GetRoleWithContext(ctx context.Context, input *iam.GetRoleInput, opts ...request.Option) (*iam.GetRoleOutput, error) {
 	role, ok := m.mockRoles[*input.RoleName]
 	if !ok {
