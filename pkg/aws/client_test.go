@@ -1137,7 +1137,7 @@ func TestIamClient_Delete(t *testing.T) {
 				RoleName:   role.Role.RoleName,
 				PolicyName: aws.String("test-delete-role-inline-policy"),
 			}); err != nil {
-				if !strings.Contains(err.Error(), iam.ErrCodeNoSuchEntityException) {
+				if !ErrIsNotFound(err) {
 					t.Errorf("Get inline policy failed: %v", err)
 				}
 			} else {

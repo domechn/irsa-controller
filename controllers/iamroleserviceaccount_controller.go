@@ -20,10 +20,8 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/service/iam"
 	gerrors "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -260,7 +258,7 @@ func (r *IamRoleServiceAccountReconciler) checkExternalResources(ctx context.Con
 	role, err := r.iamRoleClient.Get(ctx, r.iamRoleClient.RoleName(irsa))
 	if err != nil {
 		// role not found, return no error
-		if strings.Contains(err.Error(), iam.ErrCodeNoSuchEntityException) {
+		if aws.ErrIsNotFound(err) {
 			return irsav1alpha1.IrsaProgressing, nil
 		}
 		// if err is not not found
@@ -291,8 +289,7 @@ func (r *IamRoleServiceAccountReconciler) createExternalResources(ctx context.Co
 		roleArn, err = r.iamRoleClient.Create(ctx, r.oidc, irsa)
 		if err != nil {
 			// if role already exists, check its tags, if its tag contains `irsa-controller: y` , update it. Else return error
-			// TODO fix type of ErrCodeEntityAlreadyExistsException
-			if gerrors.As(err, iam.ErrCodeEntityAlreadyExistsException) {
+			if aws.ErrAlreadyExists(err) {
 				role, err := r.iamRoleClient.Get(ctx, r.iamRoleClient.RoleName(irsa))
 				if err != nil {
 					return gerrors.Wrap(err, "Iam has already exists and cannot be getten")

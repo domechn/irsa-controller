@@ -248,7 +248,7 @@ func (c *IamClient) Get(ctx context.Context, roleName string) (*IamRole, error) 
 		PolicyName: aws.String(inlinePolicyName),
 	})
 	// err is not no such entities
-	if err != nil && !strings.Contains(err.Error(), iam.ErrCodeNoSuchEntityException) {
+	if err != nil && !ErrIsNotFound(err) {
 		return nil, errors.Wrap(err, "Get inline policy failed")
 	}
 	var inlinePolicyDetail *iam.PolicyDetail
