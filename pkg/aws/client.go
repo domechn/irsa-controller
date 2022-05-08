@@ -280,8 +280,44 @@ func (c *IamClient) AllowServiceAccountAccess(ctx context.Context, role *IamRole
 }
 
 func (c *IamClient) Delete(ctx context.Context, roleArn string) error {
-	_, err := c.iamClient.DeleteRole(&iam.DeleteRoleInput{
-		RoleName: aws.String(RoleNameByArn(roleArn)),
+	roleName := RoleNameByArn(roleArn)
+
+	// TODO: fix (role|managed) policies pager
+	rolePolicies, err := c.iamClient.ListRolePolicies(&iam.ListRolePoliciesInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		return errors.Wrap(err, "List role policies failed")
+	}
+	managedPolicies, err := c.iamClient.ListAttachedRolePolicies(&iam.ListAttachedRolePoliciesInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		return errors.Wrap(err, "List role policies failed")
+	}
+
+	// clean role policies
+	for _, policyName := range rolePolicies.PolicyNames {
+		if _, err := c.iamClient.DeleteRolePolicy(&iam.DeleteRolePolicyInput{
+			RoleName:   aws.String(roleName),
+			PolicyName: policyName,
+		}); err != nil {
+			return errors.Wrap(err, "Delete role policy failed")
+		}
+	}
+
+	// detach managed role
+	for _, policy := range managedPolicies.AttachedPolicies {
+		if _, err := c.iamClient.DetachRolePolicy(&iam.DetachRolePolicyInput{
+			RoleName:  aws.String(roleName),
+			PolicyArn: policy.PolicyArn,
+		}); err != nil {
+			return errors.Wrap(err, "Detach role policy failed")
+		}
+	}
+
+	_, err = c.iamClient.DeleteRole(&iam.DeleteRoleInput{
+		RoleName: aws.String(roleName),
 	})
 	if err != nil {
 		return errors.Wrap(err, "Delete iam role failed")

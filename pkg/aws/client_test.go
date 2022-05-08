@@ -1052,6 +1052,50 @@ func TestIamClient_Delete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prepare iam role failed: %v", err)
 	}
+
+	// prepare inline policy
+	rd := &RoleDocument{
+		Version: "2012-10-17",
+		Statement: []RoleStatement{
+			{
+				Effect:   StatementAllow,
+				Action:   []string{"*"},
+				Resource: []string{"*"},
+			},
+		},
+	}
+	policyDoc, err := rd.RoleDocumentPolicyDocument()
+	if err != nil {
+		t.Fatalf("Prepare RoleDocumentPolicyDocument failed: %v", err)
+	}
+	// set inline policy
+	_, err = client.iamClient.PutRolePolicy(&iam.PutRolePolicyInput{
+		PolicyDocument: aws.String(policyDoc),
+		PolicyName:     aws.String("test-delete-role-inline-policy"), // name of inline policy
+		RoleName:       role.Role.RoleName,
+	})
+	if err != nil {
+		t.Fatalf("Prepare inline policy failed: %v", err)
+	}
+
+	// attach managed policy
+
+	policy, err := client.iamClient.CreatePolicy(&iam.CreatePolicyInput{
+		PolicyName:     aws.String("get-policy"),
+		PolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[{"Resource":"*","Effect":"Allow","Action":"*"}]}`),
+	})
+	if err != nil {
+		t.Fatalf("Prepare update policy failed: %v", err)
+	}
+
+	_, err = client.iamClient.AttachRolePolicy(&iam.AttachRolePolicyInput{
+		PolicyArn: policy.Policy.Arn,
+		RoleName:  role.Role.RoleName,
+	})
+	if err != nil {
+		t.Fatalf("Prepare attach role policy failed: %v", err)
+	}
+
 	type args struct {
 		ctx     context.Context
 		roleArn string
@@ -1082,6 +1126,22 @@ func TestIamClient_Delete(t *testing.T) {
 			c := client
 			if err := c.Delete(tt.args.ctx, tt.args.roleArn); (err != nil) != tt.wantErr {
 				t.Errorf("IamClient.Delete() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			// inline policy should be deleted
+			if _, err := c.iamClient.GetRolePolicy(&iam.GetRolePolicyInput{
+				RoleName:   role.Role.RoleName,
+				PolicyName: aws.String("test-delete-role-inline-policy"),
+			}); err != nil {
+				if !strings.Contains(err.Error(), iam.ErrCodeNoSuchEntityException) {
+					t.Errorf("Get inline policy failed: %v", err)
+				}
+			} else {
+				t.Error("inline policy should be deleted but got")
 			}
 		})
 	}
