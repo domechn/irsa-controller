@@ -4,6 +4,16 @@ Using CRD to manage Kubernetes `ServiceAccount` and AWS `Iam Role`.
 
 ## Installation
 
+### From Source Code
+
+```shell
+git clone https://github.com/domechn/irsa-controller
+cd irsa-controller
+make deploy
+```
+
+### Helm Chart
+
 TODO
 
 ## Usage
