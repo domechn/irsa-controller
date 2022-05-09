@@ -350,3 +350,66 @@ func TestIamRoleServiceAccountReconciler_reconcileServiceAccount(t *testing.T) {
 		t.Fatalf("4 get service should get not found, but get: %v", err)
 	}
 }
+
+func TestIamRoleServiceAccountReconciler_finalize(t *testing.T) {
+	irsa := &irsav1alpha1.IamRoleServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "irsa",
+			Namespace: "default",
+		},
+	}
+	mic := aws.NewMockedIamClient()
+	r := getReconciler(mic, irsa)
+
+	// 1. irsa is not deleted, finalizer should be set
+	hit, requeue, err := r.finalize(context.Background(), irsa, false)
+	if err != nil {
+		t.Fatalf("1 finalize failed: %v", err)
+	}
+	if !hit {
+		t.Fatalf("1 finalize should return hit: true, but not")
+	}
+
+	if requeue {
+		t.Fatalf("1 finalize should return requeue: false, but not")
+	}
+
+	// 2. irsa is not deleted,  finalizer has been set, do nothing
+	hit, requeue, err = r.finalize(context.Background(), irsa, false)
+	if err != nil {
+		t.Fatalf("2 finalize failed: %v", err)
+	}
+	if hit {
+		t.Fatalf("2 finalize should return hit: false, but not")
+	}
+	if requeue {
+		t.Fatalf("2 finalize should return requeue: false, but not")
+	}
+
+	// 3. irsa is deleted, sa and role should be deleted
+	if err := r.createExternalResources(context.Background(), irsa); err != nil {
+		t.Fatalf("3 createExternalResources failed: %v", err)
+	}
+	if err := r.reconcileServiceAccount(context.Background(), irsa, false); err != nil {
+		t.Fatalf("3 reconcileServiceAccount failed: %v", err)
+	}
+	now := metav1.Now()
+	irsa.DeletionTimestamp = &now
+	hit, requeue, err = r.finalize(context.Background(), irsa, true)
+	if err != nil {
+		t.Fatalf("3 finalize failed: %v", err)
+	}
+	if !hit {
+		t.Fatalf("3 finalize should return hit: true, but not")
+	}
+	if requeue {
+		t.Fatalf("3 finalize should return requeue: false, but not")
+	}
+	sa := &corev1.ServiceAccount{}
+	if err := r.Get(context.Background(), types.NamespacedName{Namespace: irsa.GetNamespace(), Name: irsa.GetName()}, sa); !errors.IsNotFound(err) {
+		t.Fatalf("Service account should be deleted, but got: %v", err)
+	}
+	if _, err := r.iamRoleClient.Get(context.Background(), r.iamRoleClient.RoleName(irsa)); !aws.ErrIsNotFound(err) {
+		t.Fatalf("Iam role should be deleted, but got: %v", err)
+	}
+}

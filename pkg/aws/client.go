@@ -284,13 +284,13 @@ func (c *IamClient) Delete(ctx context.Context, roleArn string) error {
 	roleName := RoleNameByArn(roleArn)
 
 	// TODO: fix (role|managed) policies pager
-	rolePolicies, err := c.iamClient.ListRolePolicies(&iam.ListRolePoliciesInput{
+	rolePolicies, err := c.iamClient.ListRolePoliciesWithContext(ctx, &iam.ListRolePoliciesInput{
 		RoleName: aws.String(roleName),
 	})
 	if err != nil {
 		return errors.Wrap(err, "List role policies failed")
 	}
-	managedPolicies, err := c.iamClient.ListAttachedRolePolicies(&iam.ListAttachedRolePoliciesInput{
+	managedPolicies, err := c.iamClient.ListAttachedRolePoliciesWithContext(ctx, &iam.ListAttachedRolePoliciesInput{
 		RoleName: aws.String(roleName),
 	})
 	if err != nil {
@@ -299,7 +299,7 @@ func (c *IamClient) Delete(ctx context.Context, roleArn string) error {
 
 	// clean role policies
 	for _, policyName := range rolePolicies.PolicyNames {
-		if _, err := c.iamClient.DeleteRolePolicy(&iam.DeleteRolePolicyInput{
+		if _, err := c.iamClient.DeleteRolePolicyWithContext(ctx, &iam.DeleteRolePolicyInput{
 			RoleName:   aws.String(roleName),
 			PolicyName: policyName,
 		}); err != nil {
@@ -309,7 +309,7 @@ func (c *IamClient) Delete(ctx context.Context, roleArn string) error {
 
 	// detach managed role
 	for _, policy := range managedPolicies.AttachedPolicies {
-		if _, err := c.iamClient.DetachRolePolicy(&iam.DetachRolePolicyInput{
+		if _, err := c.iamClient.DetachRolePolicyWithContext(ctx, &iam.DetachRolePolicyInput{
 			RoleName:  aws.String(roleName),
 			PolicyArn: policy.PolicyArn,
 		}); err != nil {
@@ -317,7 +317,7 @@ func (c *IamClient) Delete(ctx context.Context, roleArn string) error {
 		}
 	}
 
-	_, err = c.iamClient.DeleteRole(&iam.DeleteRoleInput{
+	_, err = c.iamClient.DeleteRoleWithContext(ctx, &iam.DeleteRoleInput{
 		RoleName: aws.String(roleName),
 	})
 	if err != nil {

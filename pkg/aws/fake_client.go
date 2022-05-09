@@ -55,6 +55,10 @@ func (m *MockedIamClient) ListAttachedRolePoliciesWithContext(ctx context.Contex
 	}, nil
 }
 
+func (m *MockedIamClient) ListRolePoliciesWithContext(ctx context.Context, input *iam.ListRolePoliciesInput, opts ...request.Option) (*iam.ListRolePoliciesOutput, error) {
+	return &iam.ListRolePoliciesOutput{}, nil
+}
+
 func (m *MockedIamClient) GetRolePolicyWithContext(ctx context.Context, input *iam.GetRolePolicyInput, opts ...request.Option) (*iam.GetRolePolicyOutput, error) {
 	return &iam.GetRolePolicyOutput{
 		RoleName:       input.RoleName,
@@ -66,4 +70,9 @@ func (m *MockedIamClient) GetRolePolicyWithContext(ctx context.Context, input *i
 func (m *MockedIamClient) UpdateAssumeRolePolicyWithContext(ctx context.Context, input *iam.UpdateAssumeRolePolicyInput, opts ...request.Option) (*iam.UpdateAssumeRolePolicyOutput, error) {
 	m.mockRoles[*input.RoleName].AssumeRolePolicyDocument = input.PolicyDocument
 	return &iam.UpdateAssumeRolePolicyOutput{}, nil
+}
+
+func (m *MockedIamClient) DeleteRoleWithContext(ctx context.Context, input *iam.DeleteRoleInput, opts ...request.Option) (*iam.DeleteRoleOutput, error) {
+	delete(m.mockRoles, *input.RoleName)
+	return &iam.DeleteRoleOutput{}, nil
 }

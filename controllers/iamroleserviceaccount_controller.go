@@ -251,7 +251,8 @@ func (r *IamRoleServiceAccountReconciler) finalize(ctx context.Context, irsa *ir
 		err := r.Update(ctx, irsa)
 		return hit, needRequeue(err), err
 	}
-	return false, needRequeue(nil), nil
+	hit = false
+	return hit, needRequeue(nil), nil
 }
 
 func (r *IamRoleServiceAccountReconciler) checkExternalResources(ctx context.Context, irsa *irsav1alpha1.IamRoleServiceAccount) (irsav1alpha1.IrsaCondition, error) {
