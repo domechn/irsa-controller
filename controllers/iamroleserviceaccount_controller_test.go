@@ -413,3 +413,74 @@ func TestIamRoleServiceAccountReconciler_finalize(t *testing.T) {
 		t.Fatalf("Iam role should be deleted, but got: %v", err)
 	}
 }
+
+func TestIamRoleServiceAccountReconciler_reconcile(t *testing.T) {
+	irsa := &irsav1alpha1.IamRoleServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "irsa",
+			Namespace: "default",
+		},
+	}
+	mic := aws.NewMockedIamClient()
+	r := getReconciler(mic, irsa)
+
+	// 1. role is just created, status should be requeue to pending
+	requeue, err := r.reconcile(context.Background(), irsa)
+	if err != nil {
+		t.Fatalf("1 reconcile failed: %v", err)
+	}
+	if requeue {
+		t.Fatalf("1 reconcile should return requeue: false, but not")
+	}
+	if irsa.Status.Condition != v1alpha1.IrsaPending {
+		t.Fatalf("1 irsa status should be updated to pending, but got %v", irsa.Status.Condition)
+	}
+
+	// 2. role check failed, status should be updated to conflict
+	// create conflict service account
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: irsa.GetNamespace(),
+			Name:      irsa.GetName(),
+		},
+	}
+	if err := r.Create(context.Background(), sa); err != nil {
+		t.Fatalf("Create conflict service account failed: %v", err)
+	}
+	requeue, err = r.reconcile(context.Background(), irsa)
+	if err == nil {
+		t.Fatalf("2 reconcile want failed, but not")
+	}
+	if requeue {
+		t.Fatalf("2 reconcile should return requeue: false, but not")
+	}
+	if irsa.Status.Condition != v1alpha1.IrsaConflict {
+		t.Fatalf("2 irsa status should be updated to conflict, but got %v", irsa.Status.Condition)
+	}
+
+	// 3. role check pass, status should be updated to progressing
+	if err := r.Delete(context.Background(), sa); err != nil {
+		t.Fatalf("3 Delete conflict service account failed: %v", err)
+	}
+	requeue, err = r.reconcile(context.Background(), irsa)
+	if err != nil {
+		t.Fatalf("3 reconcile failed: %v", err)
+	}
+	if requeue {
+		t.Fatalf("3 reconcile should return requeue: false, but not")
+	}
+	if irsa.Status.Condition != v1alpha1.IrsaProgressing {
+		t.Fatalf("3 irsa status should be updated to progressing, but got %v", irsa.Status.Condition)
+	}
+	// 4. role create successfully, status should be updated to ok
+	requeue, err = r.reconcile(context.Background(), irsa)
+	if err != nil {
+		t.Fatalf("4 reconcile failed: %v", err)
+	}
+	if requeue {
+		t.Fatalf("4 reconcile should return requeue: false, but not")
+	}
+	if irsa.Status.Condition != v1alpha1.IrsaOK {
+		t.Fatalf("4 irsa status should be updated to ok, but got %v", irsa.Status.Condition)
+	}
+}

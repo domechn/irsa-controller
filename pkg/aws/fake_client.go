@@ -13,6 +13,7 @@ import (
 type MockedIamClient struct {
 	iamiface.IAMAPI
 	mockRoles            map[string]*iam.Role
+	mockRolePolicies     map[string][]*iam.Policy
 	mockAttachedPolicies map[string][]*iam.AttachedPolicy
 }
 
@@ -56,7 +57,11 @@ func (m *MockedIamClient) ListAttachedRolePoliciesWithContext(ctx context.Contex
 }
 
 func (m *MockedIamClient) ListRolePoliciesWithContext(ctx context.Context, input *iam.ListRolePoliciesInput, opts ...request.Option) (*iam.ListRolePoliciesOutput, error) {
-	return &iam.ListRolePoliciesOutput{}, nil
+	res := &iam.ListRolePoliciesOutput{}
+	for _, policy := range m.mockRolePolicies[*input.RoleName] {
+		res.PolicyNames = append(res.PolicyNames, policy.PolicyName)
+	}
+	return res, nil
 }
 
 func (m *MockedIamClient) GetRolePolicyWithContext(ctx context.Context, input *iam.GetRolePolicyInput, opts ...request.Option) (*iam.GetRolePolicyOutput, error) {
