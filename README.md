@@ -1,6 +1,10 @@
-# irsa-controller (WIP)
+# irsa-controller
 
 Using CRD to manage Kubernetes `ServiceAccount` and AWS `Iam Role`.
+
+## Installation
+
+TODO
 
 ## Usage
 
