@@ -1,5 +1,7 @@
 # irsa-controller
 
+[![Docker](https://github.com/domechn/irsa-controller/actions/workflows/build-and-publish.yaml/badge.svg)](https://github.com/domechn/irsa-controller/actions/workflows/build-and-publish.yaml)
+
 Using CRD to manage Kubernetes `ServiceAccount` and AWS `Iam Role`.
 
 ## Installation
