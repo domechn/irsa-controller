@@ -59,7 +59,6 @@ func (l *localstackInstance) Start() error {
 	defer func() {
 		l.inUse++
 	}()
-	fmt.Println("Start", l.inUse)
 	if l.inUse > 0 {
 		return nil
 	}
@@ -72,7 +71,6 @@ func (l *localstackInstance) Stop() error {
 	defer func() {
 		l.inUse--
 	}()
-	fmt.Println("Stop", l.inUse)
 	if l.inUse > 1 {
 		return nil
 	}
