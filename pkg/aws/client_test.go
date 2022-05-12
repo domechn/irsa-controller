@@ -23,6 +23,7 @@ import (
 	"log"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"domc.me/irsa-controller/api/v1alpha1"
@@ -42,16 +43,63 @@ const (
 	testManagedPolicyName = "managedPolicy"
 )
 
-func TestIamClient_Create(t *testing.T) {
-	l, err := localstack.NewInstance()
+var (
+	l *localstackInstance
+)
+
+type localstackInstance struct {
+	i *localstack.Instance
+	sync.Mutex
+	inUse int
+}
+
+func (l *localstackInstance) Start() error {
+	l.Lock()
+	defer l.Unlock()
+	defer func() {
+		l.inUse++
+	}()
+	fmt.Println("Start", l.inUse)
+	if l.inUse > 0 {
+		return nil
+	}
+	return l.i.Start()
+}
+
+func (l *localstackInstance) Stop() error {
+	l.Lock()
+	defer l.Unlock()
+	defer func() {
+		l.inUse--
+	}()
+	fmt.Println("Stop", l.inUse)
+	if l.inUse > 1 {
+		return nil
+	}
+	return l.i.Stop()
+}
+
+func init() {
+	i, err := localstack.NewInstance()
 	if err != nil {
-		t.Fatalf("Could not connect to Docker %v", err)
+		log.Fatalf("Cloud not get localstack instance %v", err)
 	}
-	if err := l.Start(); err != nil {
-		t.Fatalf("Could not start localstack %v", err)
+	l = &localstackInstance{
+		i: i,
 	}
-	defer l.Stop()
-	client := getMockIamClient(l)
+	// if err := l.Start(); err != nil {
+	// 	log.Fatalf("Could not start localstack %v", err)
+	// }
+	// go func() {
+	// 	time.Sleep(time.Second)
+	// 	fmt.Println("Init stop")
+	// 	l.Stop()
+	// }()
+}
+
+func TestIamClient_Create(t *testing.T) {
+	t.Parallel()
+	client := getMockIamClient(t, l)
 	managed, err := client.iamClient.CreatePolicy(&iam.CreatePolicyInput{
 		PolicyName:     aws.String(testManagedPolicyName),
 		PolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[{"Resource":"*","Effect":"Allow","Action":"*"}]}`),
@@ -266,10 +314,14 @@ func TestIamClient_Create(t *testing.T) {
 	}
 }
 
-func getMockIamClient(l *localstack.Instance) *IamClient {
+func getMockIamClient(t *testing.T, l *localstackInstance) *IamClient {
+	if err := l.Start(); err != nil {
+		t.Fatalf("Could not start localstack %v", err)
+	}
+	t.Cleanup(func() { l.Stop() })
 	configurationForTest, err := session.NewSession(&aws.Config{
 		Region:      aws.String("us-east-1"),
-		Endpoint:    aws.String(l.Endpoint(localstack.IAM)),
+		Endpoint:    aws.String(l.i.Endpoint(localstack.IAM)),
 		DisableSSL:  aws.Bool(true),
 		Credentials: credentials.NewStaticCredentials("not", "empty", ""),
 	})
@@ -324,15 +376,9 @@ func TestIamClient_RoleName(t *testing.T) {
 }
 
 func TestIamClient_AttachRolePolicy(t *testing.T) {
-	l, err := localstack.NewInstance()
-	if err != nil {
-		t.Fatalf("Could not connect to Docker %v", err)
-	}
-	if err := l.Start(); err != nil {
-		t.Fatalf("Could not start localstack %v", err)
-	}
-	defer l.Stop()
-	client := getMockIamClient(l)
+
+	t.Parallel()
+	client := getMockIamClient(t, l)
 	existsPolicy, err := client.iamClient.CreatePolicy(&iam.CreatePolicyInput{
 		PolicyName:     aws.String("exists-policy"),
 		PolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[{"Resource":"*","Effect":"Allow","Action":"*"}]}`),
@@ -392,15 +438,9 @@ func TestIamClient_AttachRolePolicy(t *testing.T) {
 }
 
 func TestIamClient_DetachRolePolicy(t *testing.T) {
-	l, err := localstack.NewInstance()
-	if err != nil {
-		t.Fatalf("Could not connect to Docker %v", err)
-	}
-	if err := l.Start(); err != nil {
-		t.Fatalf("Could not start localstack %v", err)
-	}
-	defer l.Stop()
-	client := getMockIamClient(l)
+
+	t.Parallel()
+	client := getMockIamClient(t, l)
 
 	doc, err := NewAssumeRolePolicyDoc(testOidcProviderArn, "default", "default")
 	if err != nil {
@@ -414,7 +454,7 @@ func TestIamClient_DetachRolePolicy(t *testing.T) {
 		t.Fatalf("Prepare iam role failed: %v", err)
 	}
 	deAttachPolicy, err := client.iamClient.CreatePolicy(&iam.CreatePolicyInput{
-		PolicyName:     aws.String("deattach-policy"),
+		PolicyName:     aws.String("detach-policy"),
 		PolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[{"Resource":"*","Effect":"Allow","Action":"*"}]}`),
 	})
 	if err != nil {
@@ -459,7 +499,7 @@ func TestIamClient_DetachRolePolicy(t *testing.T) {
 				ctx:      context.Background(),
 				roleName: *role.Role.RoleName,
 				polices: []string{
-					"arn:aws:iam::000000000000:policy/not-deattached",
+					"arn:aws:iam::000000000000:policy/not-detached",
 				},
 			},
 			wantErr: true,
@@ -476,15 +516,9 @@ func TestIamClient_DetachRolePolicy(t *testing.T) {
 }
 
 func TestIamClient_UpdateAssumePolicy(t *testing.T) {
-	l, err := localstack.NewInstance()
-	if err != nil {
-		t.Fatalf("Could not connect to Docker %v", err)
-	}
-	if err := l.Start(); err != nil {
-		t.Fatalf("Could not start localstack %v", err)
-	}
-	defer l.Stop()
-	client := getMockIamClient(l)
+
+	t.Parallel()
+	client := getMockIamClient(t, l)
 
 	doc, err := NewAssumeRolePolicyDoc(testOidcProviderArn, "default", "default")
 	if err != nil {
@@ -549,22 +583,16 @@ func TestIamClient_UpdateAssumePolicy(t *testing.T) {
 }
 
 func TestIamClient_UpdateTags(t *testing.T) {
-	l, err := localstack.NewInstance()
-	if err != nil {
-		t.Fatalf("Could not connect to Docker %v", err)
-	}
-	if err := l.Start(); err != nil {
-		t.Fatalf("Could not start localstack %v", err)
-	}
-	defer l.Stop()
-	client := getMockIamClient(l)
+
+	t.Parallel()
+	client := getMockIamClient(t, l)
 
 	doc, err := NewAssumeRolePolicyDoc(testOidcProviderArn, "default", "default")
 	if err != nil {
 		t.Fatalf("New assume role policy doc failed: %v", err)
 	}
 	role, err := client.iamClient.CreateRole(&iam.CreateRoleInput{
-		RoleName:                 aws.String("test-update-assume-role"),
+		RoleName:                 aws.String("test-update-tags-assume-role"),
 		AssumeRolePolicyDocument: aws.String(doc),
 	})
 	if err != nil {
@@ -637,15 +665,9 @@ func TestIamClient_UpdateTags(t *testing.T) {
 }
 
 func TestIamClient_UpdatePolicy(t *testing.T) {
-	l, err := localstack.NewInstance()
-	if err != nil {
-		t.Fatalf("Could not connect to Docker %v", err)
-	}
-	if err := l.Start(); err != nil {
-		t.Fatalf("Could not start localstack %v", err)
-	}
-	defer l.Stop()
-	client := getMockIamClient(l)
+
+	t.Parallel()
+	client := getMockIamClient(t, l)
 
 	policy, err := client.iamClient.CreatePolicy(&iam.CreatePolicyInput{
 		PolicyName:     aws.String("update-policy"),
@@ -722,15 +744,9 @@ func TestIamClient_UpdatePolicy(t *testing.T) {
 }
 
 func TestIamClient_UpdateInlinePolicy(t *testing.T) {
-	l, err := localstack.NewInstance()
-	if err != nil {
-		t.Fatalf("Could not connect to Docker %v", err)
-	}
-	if err := l.Start(); err != nil {
-		t.Fatalf("Could not start localstack %v", err)
-	}
-	defer l.Stop()
-	client := getMockIamClient(l)
+
+	t.Parallel()
+	client := getMockIamClient(t, l)
 
 	doc, err := NewAssumeRolePolicyDoc(testOidcProviderArn, "default", "default")
 	if err != nil {
@@ -805,15 +821,9 @@ func TestIamClient_UpdateInlinePolicy(t *testing.T) {
 }
 
 func TestIamClient_Get(t *testing.T) {
-	l, err := localstack.NewInstance()
-	if err != nil {
-		t.Fatalf("Could not connect to Docker %v", err)
-	}
-	if err := l.Start(); err != nil {
-		t.Fatalf("Could not start localstack %v", err)
-	}
-	defer l.Stop()
-	client := getMockIamClient(l)
+
+	t.Parallel()
+	client := getMockIamClient(t, l)
 
 	// init ima role
 	assumeRolePolicy := NewAssumeRolePolicy(testOidcProviderArn, "default", "default")
@@ -949,15 +959,9 @@ func TestIamClient_Get(t *testing.T) {
 }
 
 func TestIamClient_AllowServiceAccountAccess(t *testing.T) {
-	l, err := localstack.NewInstance()
-	if err != nil {
-		t.Fatalf("Could not connect to Docker %v", err)
-	}
-	if err := l.Start(); err != nil {
-		t.Fatalf("Could not start localstack %v", err)
-	}
-	defer l.Stop()
-	client := getMockIamClient(l)
+
+	t.Parallel()
+	client := getMockIamClient(t, l)
 
 	// init ima role
 	assumeRolePolicy := NewAssumeRolePolicy(testOidcProviderArn, "default", "default")
@@ -1038,15 +1042,9 @@ func TestIamClient_AllowServiceAccountAccess(t *testing.T) {
 }
 
 func TestIamClient_Delete(t *testing.T) {
-	l, err := localstack.NewInstance()
-	if err != nil {
-		t.Fatalf("Could not connect to Docker %v", err)
-	}
-	if err := l.Start(); err != nil {
-		t.Fatalf("Could not start localstack %v", err)
-	}
-	defer l.Stop()
-	client := getMockIamClient(l)
+
+	t.Parallel()
+	client := getMockIamClient(t, l)
 
 	// init ima role
 	assumeRolePolicy := NewAssumeRolePolicy(testOidcProviderArn, "default", "default")
@@ -1097,7 +1095,7 @@ func TestIamClient_Delete(t *testing.T) {
 	// attach managed policy
 
 	policy, err := client.iamClient.CreatePolicy(&iam.CreatePolicyInput{
-		PolicyName:     aws.String("get-policy"),
+		PolicyName:     aws.String("delete-policy"),
 		PolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[{"Resource":"*","Effect":"Allow","Action":"*"}]}`),
 	})
 	if err != nil {
