@@ -24,6 +24,7 @@ import (
 
 	"domc.me/irsa-controller/api/v1alpha1"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
@@ -37,8 +38,11 @@ type IamClient struct {
 	iamClient      iamiface.IAMAPI
 }
 
-func NewIamClient(clusterName, iamRolePrefix string, additionalTagsArgs []string) *IamClient {
+func NewIamClient(clusterName, iamRolePrefix string, additionalTagsArgs []string, config *AWSConfig) *IamClient {
 	awsconf := aws.NewConfig()
+	if config != nil {
+		awsconf = aws.NewConfig().WithEndpoint(config.Endpoint).WithRegion(config.Region).WithDisableSSL(config.DisableSSL).WithCredentials(credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, ""))
+	}
 	session := session.New()
 	return NewIamClientWithIamAPI(clusterName, iamRolePrefix, additionalTagsArgs, iam.New(session, awsconf))
 }

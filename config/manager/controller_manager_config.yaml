@@ -9,5 +9,4 @@ webhook:
 leaderElection:
   leaderElect: true
   resourceName: 540024c5.domc.me
-spec:
-  clusterName: kind-test
+clusterName: kind-test

@@ -25,6 +25,36 @@ import (
 	irsav1alpha1 "domc.me/irsa-controller/api/v1alpha1"
 )
 
+type AWSConfig struct {
+	Endpoint        string
+	Region          string
+	AccessKeyID     string
+	SecretAccessKey string
+	DisableSSL      bool
+}
+
+// NewAWSConfigFromSpec is used to create a AWSConfig from the irsa spec
+// and set default value if it is not specified in spec
+func NewAWSConfigFromSpec(cfg *irsav1alpha1.AWSConfigSpec) *AWSConfig {
+	if cfg == nil {
+		return nil
+	}
+
+	awsConfig := &AWSConfig{
+		Endpoint:        cfg.Endpoint,
+		Region:          cfg.Region,
+		AccessKeyID:     cfg.AccessKeyID,
+		SecretAccessKey: cfg.SecretAccessKey,
+		DisableSSL:      cfg.DisableSSL,
+	}
+	// no need to set endpoint, cause aws sdk will handle ""
+	// set region to us-east-1 if not set
+	if awsConfig.Region == "" {
+		awsConfig.Region = "us-east-1"
+	}
+	return awsConfig
+}
+
 type StatementEffect string
 
 const (

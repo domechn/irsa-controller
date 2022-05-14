@@ -20,6 +20,10 @@ spec:
       openAPIV3Schema:
         description: ProjectConfig is the Schema for the projectconfigs API
         properties:
+          additionalTags:
+            items:
+              type: string
+            type: array
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
               of an object. Servers should convert recognized schemas to the latest
@@ -31,6 +35,8 @@ spec:
               \n Note: If a namespace is specified, controllers can still Watch for
               a cluster-scoped resource (e.g Node).  For namespaced resources the
               cache will only hold objects from the desired namespace."
+            type: string
+          clusterName:
             type: string
           controller:
             description: Controller contains global configuration options for controllers
@@ -76,6 +82,8 @@ spec:
                 description: ReadinessEndpointName, defaults to "readyz"
                 type: string
             type: object
+          iamRolePrefix:
+            type: string
           kind:
             description: 'Kind is a string value representing the REST resource this
               object represents. Servers may infer this from the endpoint the client
@@ -141,20 +149,8 @@ spec:
                   disable the metrics serving.
                 type: string
             type: object
-          spec:
-            description: ProjectConfigSpec defines the desired state of ProjectConfig
-            properties:
-              additionalTags:
-                items:
-                  type: string
-                type: array
-              clusterName:
-                type: string
-              iamRolePrefix:
-                type: string
-              oidcProviderArn:
-                type: string
-            type: object
+          oidcProviderArn:
+            type: string
           status:
             description: ProjectConfigStatus defines the observed state of ProjectConfig
             type: object

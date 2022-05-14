@@ -29,10 +29,19 @@ type ProjectConfigSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	IamRolePrefix   string   `json:"iamRolePrefix,omitempty"`
-	ClusterName     string   `json:"clusterName,omitempty"`
-	OIDCProviderArn string   `json:"oidcProviderArn,omitempty"`
-	AdditionalTags  []string `json:"additionalTags,omitempty"`
+	IamRolePrefix   string         `json:"iamRolePrefix,omitempty"`
+	ClusterName     string         `json:"clusterName,omitempty"`
+	OIDCProviderArn string         `json:"oidcProviderArn,omitempty"`
+	AdditionalTags  []string       `json:"additionalTags,omitempty"`
+	AWSConfig       *AWSConfigSpec `json:"awsConfig,omitempty"`
+}
+
+type AWSConfigSpec struct {
+	Endpoint        string `json:"endpoint,omitempty"`
+	Region          string `json:"region,omitempty"`
+	AccessKeyID     string `json:"accessKeyID,omitempty"`
+	SecretAccessKey string `json:"secretAccessKey,omitempty"`
+	DisableSSL      bool   `json:"disableSSL,omitempty"`
 }
 
 // ProjectConfigStatus defines the observed state of ProjectConfig
@@ -49,7 +58,7 @@ type ProjectConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ProjectConfigSpec   `json:"spec,omitempty"`
+	Spec   ProjectConfigSpec   `json:",inline"`
 	Status ProjectConfigStatus `json:"status,omitempty"`
 
 	// ControllerManagerConfigurationSpec returns the contfigurations for controllers

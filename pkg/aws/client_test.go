@@ -28,8 +28,6 @@ import (
 
 	"domc.me/irsa-controller/api/v1alpha1"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/elgohr/go-localstack"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -85,14 +83,6 @@ func init() {
 	l = &localstackInstance{
 		i: i,
 	}
-	// if err := l.Start(); err != nil {
-	// 	log.Fatalf("Could not start localstack %v", err)
-	// }
-	// go func() {
-	// 	time.Sleep(time.Second)
-	// 	fmt.Println("Init stop")
-	// 	l.Stop()
-	// }()
 }
 
 func TestIamClient_Create(t *testing.T) {
@@ -317,16 +307,13 @@ func getMockIamClient(t *testing.T, l *localstackInstance) *IamClient {
 		t.Fatalf("Could not start localstack %v", err)
 	}
 	t.Cleanup(func() { l.Stop() })
-	configurationForTest, err := session.NewSession(&aws.Config{
-		Region:      aws.String("us-east-1"),
-		Endpoint:    aws.String(l.i.Endpoint(localstack.IAM)),
-		DisableSSL:  aws.Bool(true),
-		Credentials: credentials.NewStaticCredentials("not", "empty", ""),
+	return NewIamClient(testClusterName, testIamRolePrefix, []string{}, &AWSConfig{
+		Region:          "us-east-1",
+		Endpoint:        l.i.Endpoint(localstack.IAM),
+		DisableSSL:      true,
+		AccessKeyID:     "not",
+		SecretAccessKey: "empty",
 	})
-	if err != nil {
-		log.Fatalf("Cloud not get configuration from localstack %v", err)
-	}
-	return NewIamClientWithIamAPI(testClusterName, testIamRolePrefix, []string{}, iam.New(configurationForTest))
 }
 
 func TestIamClient_RoleName(t *testing.T) {
