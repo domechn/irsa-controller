@@ -30,7 +30,6 @@ type ProjectConfigSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	IamRolePrefix   string         `json:"iamRolePrefix,omitempty"`
-	ClusterName     string         `json:"clusterName,omitempty"`
 	OIDCProviderArn string         `json:"oidcProviderArn,omitempty"`
 	AdditionalTags  []string       `json:"additionalTags,omitempty"`
 	AWSConfig       *AWSConfigSpec `json:"awsConfig,omitempty"`
