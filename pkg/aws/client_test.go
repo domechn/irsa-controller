@@ -269,7 +269,7 @@ func TestIamClient_Create(t *testing.T) {
 						t.Errorf("Unmarshal inline policy failed: %v", err)
 					}
 
-					wantRole := NewIamRole(testOidcProviderArn, tt.args.irsa)
+					wantRole := NewIamRole(testOidcProviderArn, tt.args.irsa, nil)
 
 					if !reflect.DeepEqual(gotIpc, wantRole.InlinePolicy) {
 						t.Errorf("IamClient.Create() policy got = %v, want = %v", gotIpc, wantRole.InlinePolicy)
@@ -600,8 +600,9 @@ func TestIamClient_UpdateTags(t *testing.T) {
 				ctx:      context.Background(),
 				roleName: *role.Role.RoleName,
 				tags: map[string]string{
-					"k1": "v1",
-					"k2": "v2",
+					"k1":                       "v1",
+					"k2":                       "v2",
+					IrsaContollerManagedTagKey: IrsaContollerManagedTagVal,
 				},
 			},
 		},
@@ -642,7 +643,7 @@ func TestIamClient_UpdateTags(t *testing.T) {
 					}
 				}
 				if !found {
-					t.Errorf("Not get expect tag, key: %s", expectK)
+					t.Errorf("Not get expect tag, key: %s, value: %s", expectK, expectV)
 				}
 			}
 		})

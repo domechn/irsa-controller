@@ -29,6 +29,19 @@ spec:
               of an object. Servers should convert recognized schemas to the latest
               internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
             type: string
+          awsConfig:
+            properties:
+              accessKeyID:
+                type: string
+              disableSSL:
+                type: boolean
+              endpoint:
+                type: string
+              region:
+                type: string
+              secretAccessKey:
+                type: string
+            type: object
           cacheNamespace:
             description: "CacheNamespace if specified restricts the manager's cache
               to watch objects in the desired namespace Defaults to all namespaces

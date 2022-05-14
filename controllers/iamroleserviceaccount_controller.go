@@ -355,6 +355,7 @@ func (r *IamRoleServiceAccountReconciler) reconcileServiceAccount(ctx context.Co
 		Namespace: namespace,
 		Name:      saName,
 	}, &sa)
+	originSa := sa.DeepCopy()
 	// update sa to latest
 	sa.Namespace = namespace
 	sa.Name = saName
@@ -368,7 +369,7 @@ func (r *IamRoleServiceAccountReconciler) reconcileServiceAccount(ctx context.Co
 				return gerrors.Wrap(err, "Set controller reference failed")
 			}
 			if !shouldReconcile() {
-				// no need to reconcile
+				// no need to reconcile if the status of irsa is not ok and is not dryRun
 				return nil
 			}
 
@@ -382,10 +383,15 @@ func (r *IamRoleServiceAccountReconciler) reconcileServiceAccount(ctx context.Co
 	}
 
 	if !shouldReconcile() {
-		// no need to reconcile
+		// no need to reconcile if the status of irsa is not ok and is not dryRun
 		return nil
 	}
-	// TODO: no need to update if sa not changed
+
+	// no need to update if sa not changed
+	if originSa.GetAnnotations() != nil && originSa.GetAnnotations()[irsaAnnotationKey] == roleArn {
+		return nil
+	}
+
 	return r.Client.Update(ctx, &sa, dryRunUpdateOption(dryRun)...)
 }
 
@@ -438,8 +444,7 @@ func (r *IamRoleServiceAccountReconciler) updateExternalResourcesIfNeed(ctx cont
 		return gerrors.Wrap(err, "Get iam role by arn failed")
 	}
 
-	wantRole := aws.NewIamRole(r.oidc, irsa)
-	// TODO: set tag cause it is empty now
+	wantRole := aws.NewIamRole(r.oidc, irsa, r.iamRoleClient.GetAdditionalTags())
 
 	// compare spec and iam role detail
 

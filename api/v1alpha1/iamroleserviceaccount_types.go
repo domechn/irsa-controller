@@ -39,6 +39,9 @@ type IamRoleServiceAccountSpec struct {
 	// +kubebuilder:validation:OneOf
 	// +optional
 	Policy *PolicySpec `json:"policy,omitempty"`
+
+	// +optional
+	Tags map[string]string `json:"tags,omitempty"`
 }
 
 type PolicySpec struct {

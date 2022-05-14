@@ -72,8 +72,7 @@ func parseAdditionalTagsArgs(args []string) map[string]string {
 // also create inline policy if defined in irsa
 // returns arn of aws iam role and arn of inline policy if inline policy is created
 func (c *IamClient) Create(ctx context.Context, oidcProvider string, irsa *v1alpha1.IamRoleServiceAccount) (string, error) {
-
-	iamRole := NewIamRole(oidcProvider, irsa)
+	iamRole := NewIamRole(oidcProvider, irsa, c.additionalTags)
 
 	assumeRoleDocument, err := iamRole.AssumeRolePolicy.AssumeRoleDocumentPolicyDocument()
 	if err != nil {
@@ -85,8 +84,7 @@ func (c *IamClient) Create(ctx context.Context, oidcProvider string, irsa *v1alp
 	output, err := c.iamClient.CreateRoleWithContext(ctx, &iam.CreateRoleInput{
 		RoleName:                 aws.String(roleName),
 		AssumeRolePolicyDocument: aws.String(assumeRoleDocument),
-		// TODO: support define tags in irsa: irsa.Spec.Tags
-		Tags: c.getIamRoleTags(nil),
+		Tags:                     getIamRoleTags(iamRole.Tags),
 	})
 	if err != nil {
 		return "", errors.Wrap(err, "Create role in aws failed")
@@ -170,10 +168,9 @@ func (c *IamClient) UpdateAssumePolicy(ctx context.Context, roleName string, ass
 
 func (c *IamClient) UpdateTags(ctx context.Context, roleName string, tags map[string]string) error {
 	// append fixed tags setten in controller started
-	irts := c.getIamRoleTags(tags)
 	_, err := c.iamClient.TagRole(&iam.TagRoleInput{
 		RoleName: aws.String(roleName),
-		Tags:     irts,
+		Tags:     getIamRoleTags(tags),
 	})
 	if err != nil {
 		return errors.Wrap(err, "Tag iam role failed")
@@ -360,26 +357,21 @@ func (c *IamClient) getInlinePolicyName(roleName string) string {
 	return fmt.Sprintf("%s-inline-policy", roleName)
 }
 
-func (c *IamClient) getIamRoleTags(specificTags map[string]string) []*iam.Tag {
-	tagsMap := make(map[string]string)
+func (c *IamClient) GetAdditionalTags() map[string]string {
+	return c.additionalTags
+}
 
+func getIamRoleTags(tags map[string]string) []*iam.Tag {
 	var res []*iam.Tag
-	for k, v := range c.additionalTags {
-		tagsMap[k] = v
-	}
-
-	for k, v := range specificTags {
-		tagsMap[k] = v
-	}
-
-	// fixed key value: managed by irsa-controller
-	tagsMap[IrsaContollerManagedTagKey] = IrsaContollerManagedTagVal
-
-	for k, v := range tagsMap {
-		res = append(res, &iam.Tag{
+	for k, v := range tags {
+		tag := &iam.Tag{
 			Key:   aws.String(k),
 			Value: aws.String(v),
-		})
+		}
+		if k == IrsaContollerManagedTagKey {
+			tag.Value = aws.String(IrsaContollerManagedTagVal)
+		}
+		res = append(res, tag)
 	}
 	return res
 }

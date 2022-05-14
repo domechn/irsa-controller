@@ -90,9 +90,16 @@ func (i *IamRole) IsManagedByIrsaController() bool {
 }
 
 // NewIamRole is used only if the iam role is created by irsa but not be specificed by irsa.roleName
-func NewIamRole(oidcProviderArn string, irsa *irsav1alpha1.IamRoleServiceAccount) *IamRole {
+func NewIamRole(oidcProviderArn string, irsa *irsav1alpha1.IamRoleServiceAccount, additionalTags map[string]string) *IamRole {
 	iamRole := new(IamRole)
+	// set additional tags
+	iamRole.Tags = additionalTags
+	if iamRole.Tags == nil {
+		iamRole.Tags = make(map[string]string)
+	}
 	iamRole.fromIRSA(oidcProviderArn, irsa)
+	// fixed key value: managed by irsa-controller
+	iamRole.Tags[IrsaContollerManagedTagKey] = IrsaContollerManagedTagVal
 	return iamRole
 }
 
@@ -120,6 +127,9 @@ func (i *IamRole) fromIRSA(oidcProviderArn string, irsa *irsav1alpha1.IamRoleSer
 	arp := NewAssumeRolePolicy(oidcProviderArn, irsa.GetNamespace(), irsa.GetName())
 	i.AssumeRolePolicy = &arp
 
+	for k, v := range irsa.Spec.Tags {
+		i.Tags[k] = v
+	}
 }
 
 type RoleDocument struct {

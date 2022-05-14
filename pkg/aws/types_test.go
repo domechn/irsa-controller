@@ -90,6 +90,9 @@ func TestNewIamRole(t *testing.T) {
 				},
 				ManagedPolicies:  []string{"policy1"},
 				AssumeRolePolicy: assumeRoleDocument2Pointer(NewAssumeRolePolicy(testOidcProviderArn, "default", "test")),
+				Tags: map[string]string{
+					IrsaContollerManagedTagKey: IrsaContollerManagedTagVal,
+				},
 			},
 		},
 		{
@@ -113,12 +116,15 @@ func TestNewIamRole(t *testing.T) {
 				RoleArn:          "arn:aws:iam::000000000000:role/test",
 				RoleName:         "test",
 				AssumeRolePolicy: assumeRoleDocument2Pointer(NewAssumeRolePolicy(testOidcProviderArn, "default", "test")),
+				Tags: map[string]string{
+					IrsaContollerManagedTagKey: IrsaContollerManagedTagVal,
+				},
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := NewIamRole(tt.args.oidcProviderArn, tt.args.irsa); !reflect.DeepEqual(got, tt.want) {
+			if got := NewIamRole(tt.args.oidcProviderArn, tt.args.irsa, nil); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NewIamRole() = %v, want %v", got, tt.want)
 			}
 		})
