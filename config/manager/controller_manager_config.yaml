@@ -12,7 +12,7 @@ leaderElection:
   resourceNamespace: irsa-controller-system
 clusterName: kind-test
 awsConfig:
-  endpoint: http://localstack.localstack:4571
+  endpoint: http://localstack.localstack:4566
   accessKeyID: test
   secretAccessKey: test
   disableSSL: true
