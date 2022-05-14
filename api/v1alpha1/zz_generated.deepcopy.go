@@ -193,7 +193,7 @@ func (in *ProjectConfig) DeepCopyInto(out *ProjectConfig) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	in.Spec.DeepCopyInto(&out.Spec)
+	in.ProjectConfigSpec.DeepCopyInto(&out.ProjectConfigSpec)
 	out.Status = in.Status
 	in.ControllerManagerConfigurationSpec.DeepCopyInto(&out.ControllerManagerConfigurationSpec)
 }

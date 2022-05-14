@@ -58,8 +58,8 @@ type ProjectConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ProjectConfigSpec   `json:",inline"`
-	Status ProjectConfigStatus `json:"status,omitempty"`
+	ProjectConfigSpec `json:",inline"`
+	Status            ProjectConfigStatus `json:"status,omitempty"`
 
 	// ControllerManagerConfigurationSpec returns the contfigurations for controllers
 	cfg.ControllerManagerConfigurationSpec `json:",inline"`

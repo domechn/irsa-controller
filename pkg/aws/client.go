@@ -140,7 +140,6 @@ func (c *IamClient) DetachRolePolicy(ctx context.Context, roleName string, polic
 		if policyArn == "" {
 			continue
 		}
-		fmt.Println(policyArn)
 		if _, err := c.iamClient.DetachRolePolicyWithContext(ctx, &iam.DetachRolePolicyInput{
 			RoleName:  aws.String(roleName),
 			PolicyArn: aws.String(policyArn),

@@ -9,9 +9,10 @@ webhook:
 leaderElection:
   leaderElect: true
   resourceName: 540024c5.domc.me
+  resourceNamespace: irsa-controller-system
 clusterName: kind-test
 awsConfig:
-  endpoint: https://localstack.localstack:4566
+  endpoint: http://localstack.localstack:4571
   accessKeyID: test
   secretAccessKey: test
   disableSSL: true
