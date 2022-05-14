@@ -1,6 +1,0 @@
-apiVersion: irsa.domc.me/v1alpha1
-kind: ProjectConfig
-metadata:
-  name: projectconfig-sample
-spec:
-  # TODO(user): Add fields here

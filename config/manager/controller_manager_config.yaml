@@ -10,3 +10,8 @@ leaderElection:
   leaderElect: true
   resourceName: 540024c5.domc.me
 clusterName: kind-test
+awsConfig:
+  endpoint: https://localstack.localstack:4566
+  accessKeyID: test
+  secretAccessKey: test
+  disableSSL: true
