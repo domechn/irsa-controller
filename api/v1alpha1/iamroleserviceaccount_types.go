@@ -38,27 +38,34 @@ type IamRoleServiceAccountSpec struct {
 
 	// +kubebuilder:validation:OneOf
 	// +optional
+	// Policy defines the policy list of iam role in aws account
 	Policy *PolicySpec `json:"policy,omitempty"`
 
 	// +optional
+	// Tags is a list of tags to apply to the IAM role ( only if the iam role is created by irsa-controller )
 	Tags map[string]string `json:"tags,omitempty"`
 }
 
 type PolicySpec struct {
 	// +optional
+	// ManagedPolicies will make the iam role be attached with a list of managed policies
 	ManagedPolicies []string `json:"managedPolicies"`
 	// +optional
+	// InlinePolicy defines the details of inline policy of iam role in aws account
 	InlinePolicy *InlinePolicySpec `json:"inlinePolicy"`
 }
 
 // InlinePolicySpec defines the policy create within iam role
 type InlinePolicySpec struct {
-	Version   string          `json:"version"`
+	// Version defines policy version, default is "2012-10-17"
+	Version string `json:"version"`
+	// Statement defines the policy statement
 	Statement []StatementSpec `json:"statement"`
 }
 
 type StatementConditionSpec map[string]map[string]string
 
+// StatementSpec defines the policy statement
 type StatementSpec struct {
 	Resource []string `json:"resource"`
 	Action   []string `json:"action"`
@@ -71,12 +78,15 @@ type StatementSpec struct {
 // IamRoleServiceAccountStatus defines the observed state of IamRoleServiceAccount
 type IamRoleServiceAccountStatus struct {
 	// +optional
+	// RoleArn is the arn of iam role in aws account if the iam role is created or is external role
 	RoleArn string `json:"roleArn,omitempty"`
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 	// +optional
+	// Conditions is a list of conditions and their status. Pending, Conflict, and Forbidden are in the status before resources creation, and Failed, Progressing and Synced are the status after resources creation
 	Condition IrsaCondition `json:"condition,omitempty"`
 	// +optional
+	// Reason is a brief string that describes any failure.
 	Reason string `json:"reason,omitempty"`
 }
 
