@@ -1141,3 +1141,68 @@ func TestIamClient_Delete(t *testing.T) {
 		})
 	}
 }
+
+func TestIamClient_DeleteInlinePolicy(t *testing.T) {
+
+	t.Parallel()
+	client := getMockIamClient(t, l)
+
+	doc, err := NewAssumeRolePolicyDoc(testOidcProviderArn, "default", "default")
+	if err != nil {
+		t.Fatalf("New assume role policy doc failed: %v", err)
+	}
+	role, err := client.iamClient.CreateRole(&iam.CreateRoleInput{
+		RoleName:                 aws.String("test-update-inline-policy-role"),
+		AssumeRolePolicyDocument: aws.String(doc),
+	})
+	if err != nil {
+		t.Fatalf("Prepare iam role failed: %v", err)
+	}
+	_, err = client.iamClient.PutRolePolicy(&iam.PutRolePolicyInput{
+		PolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}`),
+		RoleName:       role.Role.RoleName,
+		PolicyName:     aws.String(*role.Role.RoleName + "-inline-policy"),
+	})
+	if err != nil {
+		t.Fatalf("Prepare role inline policy failed: %v", err)
+	}
+
+	type args struct {
+		ctx      context.Context
+		roleName string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "update inline policy",
+			args: args{
+				ctx:      context.Background(),
+				roleName: *role.Role.RoleName,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := client
+			if err := c.DeleteInlinePolicy(tt.args.ctx, tt.args.roleName); (err != nil) != tt.wantErr {
+				t.Errorf("IamClient.UpdateInlinePolicy() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			_, err = c.iamClient.GetRolePolicy(&iam.GetRolePolicyInput{
+				RoleName:   role.Role.RoleName,
+				PolicyName: aws.String(c.getInlinePolicyName(*role.Role.RoleName)),
+			})
+			if !ErrIsNotFound(err) {
+				t.Errorf("Role policy should not found, but got: %v", err)
+			}
+
+		})
+	}
+}

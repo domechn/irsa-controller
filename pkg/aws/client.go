@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"domc.me/irsa-controller/api/v1alpha1"
@@ -212,8 +213,12 @@ func (c *IamClient) transfer(role *iam.Role, managedPolicyArns []string, inlineP
 	res.RoleName = *role.RoleName
 	if role.AssumeRolePolicyDocument != nil {
 		var entity AssumeRoleDocument
-		if err := json.Unmarshal([]byte(*role.AssumeRolePolicyDocument), &entity); err != nil {
-			return nil, err
+		decoded, err := url.QueryUnescape(*role.AssumeRolePolicyDocument)
+		if err != nil {
+			return nil, errors.Wrap(err, "Decode assume role policy failed")
+		}
+		if err := json.Unmarshal([]byte(decoded), &entity); err != nil {
+			return nil, errors.Wrap(err, "Unmarshal assume role policy failed")
 		}
 		res.AssumeRolePolicy = &entity
 	}
@@ -230,9 +235,13 @@ func (c *IamClient) transfer(role *iam.Role, managedPolicyArns []string, inlineP
 	res.ManagedPolicies = managedPolicyArns
 	if inlinePolicy != nil && inlinePolicy.PolicyDocument != nil {
 		var docJson RoleDocument
-		err := json.Unmarshal([]byte(*inlinePolicy.PolicyDocument), &docJson)
+		decoded, err := url.QueryUnescape(*inlinePolicy.PolicyDocument)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "Decode inline policy failed")
+		}
+		err = json.Unmarshal([]byte(decoded), &docJson)
+		if err != nil {
+			return nil, errors.Wrap(err, "Unmarshal inline policy failed")
 		}
 		res.InlinePolicy = &docJson
 	}
@@ -276,7 +285,10 @@ func (c *IamClient) Get(ctx context.Context, roleName string) (*IamRole, error) 
 		inlinePolicyDetail.PolicyName = ipo.PolicyName
 	}
 	iam, err := c.transfer(output.Role, managedPolicyArns, inlinePolicyDetail)
-	return iam, err
+	if err != nil {
+		return nil, errors.Wrap(err, "Transfer role failed")
+	}
+	return iam, nil
 }
 
 func (c *IamClient) AllowServiceAccountAccess(ctx context.Context, role *IamRole, oidcProviderArn, namespace, serviceAccountName string) error {
@@ -291,7 +303,7 @@ func (c *IamClient) AllowServiceAccountAccess(ctx context.Context, role *IamRole
 		PolicyDocument: aws.String(doc),
 	})
 	if err != nil {
-		return errors.Wrap(err, "Update assume role policy failed")
+		return errors.Wrap(err, "Allow access update assume role policy failed")
 	}
 	return nil
 }
@@ -348,6 +360,17 @@ func (c *IamClient) DeletePolicy(ctx context.Context, policyArn string) error {
 	})
 	if err != nil {
 		return errors.Wrap(err, "Delete policy failed")
+	}
+	return nil
+}
+
+func (c *IamClient) DeleteInlinePolicy(ctx context.Context, roleName string) error {
+	_, err := c.iamClient.DeleteRolePolicyWithContext(ctx, &iam.DeleteRolePolicyInput{
+		RoleName:   aws.String(roleName),
+		PolicyName: aws.String(c.getInlinePolicyName(roleName)),
+	})
+	if err != nil {
+		return errors.Wrap(err, "Delete inline policy failed")
 	}
 	return nil
 }

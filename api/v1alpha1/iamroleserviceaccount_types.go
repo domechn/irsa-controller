@@ -80,7 +80,7 @@ type IamRoleServiceAccountStatus struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Pending;Conflict;Forbidden;Failed;Progressing;Created
+// +kubebuilder:validation:Enum=Pending;Conflict;Forbidden;Failed;Progressing;Synced
 type IrsaCondition string
 
 var (
@@ -90,7 +90,7 @@ var (
 	IrsaForbidden   IrsaCondition = "Forbidden"
 	IrsaFailed      IrsaCondition = "Failed"
 	IrsaProgressing IrsaCondition = "Progressing"
-	IrsaOK          IrsaCondition = "Created"
+	IrsaOK          IrsaCondition = "Synced"
 )
 
 //+kubebuilder:object:root=true

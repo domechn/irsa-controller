@@ -163,16 +163,18 @@ func roleStatementFromIRSAStatementSpec(sts *irsav1alpha1.StatementSpec) RoleSta
 	}
 }
 
+type AssumeRoleStatementPrincipal struct {
+	AWS       string `json:"AWS,omitempty"`
+	Service   string `json:"Service,omitempty"`
+	Federated string `json:"Federated,omitempty"`
+}
+
 // AssumeRoleStatement defines the structure of trust relationship policy in aws iam role
 type AssumeRoleStatement struct {
 	Effect    StatementEffect
-	Principal struct {
-		Federated string
-	}
+	Principal AssumeRoleStatementPrincipal `json:"Principal,omitempty"`
 	Action    string
-	Condition struct {
-		StringEquals map[string]string
-	}
+	Condition map[string]map[string]string `json:"Condition,omitempty"`
 }
 
 // AssumeRoleDocument defines the trust relationship of aws iam role
@@ -194,8 +196,8 @@ func (t *AssumeRoleDocument) IsAllowOIDC(oidcProviderArn, namespace, serviceAcco
 		return false
 	}
 	for _, st := range t.Statement {
-		if st.Action == AssumeRoleWithWebIdentityAction && st.Principal.Federated == oidcProviderArn {
-			if val := st.Condition.StringEquals[fmt.Sprintf("%s:sub", getIssuerHostpath(oidcProviderArn))]; val == fmt.Sprintf("system:serviceaccount:%s:%s", namespace, serviceAccountName) {
+		if st.Action == AssumeRoleWithWebIdentityAction && st.Principal.Federated == oidcProviderArn && st.Condition["StringEquals"] != nil {
+			if val := st.Condition["StringEquals"][fmt.Sprintf("%s:sub", getIssuerHostpath(oidcProviderArn))]; val == fmt.Sprintf("system:serviceaccount:%s:%s", namespace, serviceAccountName) {
 				return true
 			}
 		}
@@ -224,14 +226,12 @@ func NewAssumeRolePolicy(oidcProviderArn, namespace, serviceAccountName string) 
 		Statement: []AssumeRoleStatement{
 			{
 				Effect: StatementAllow,
-				Principal: struct{ Federated string }{
+				Principal: AssumeRoleStatementPrincipal{
 					Federated: string(oidcProviderArn),
 				},
 				Action: AssumeRoleWithWebIdentityAction,
-				Condition: struct {
-					StringEquals map[string]string
-				}{
-					StringEquals: map[string]string{
+				Condition: map[string]map[string]string{
+					"StringEquals": map[string]string{
 						fmt.Sprintf("%s:sub", getIssuerHostpath(oidcProviderArn)): fmt.Sprintf("system:serviceaccount:%s:%s", namespace, serviceAccountName),
 					},
 				},

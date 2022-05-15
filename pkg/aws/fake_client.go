@@ -97,3 +97,7 @@ func (m *MockedIamClient) DeleteRoleWithContext(ctx context.Context, input *iam.
 	delete(m.mockRoles, *input.RoleName)
 	return &iam.DeleteRoleOutput{}, nil
 }
+
+func (m *MockedIamClient) DeleteRolePolicyWithContext(ctx context.Context, input *iam.DeleteRolePolicyInput, opts ...request.Option) (*iam.DeleteRolePolicyOutput, error) {
+	return &iam.DeleteRolePolicyOutput{}, nil
+}

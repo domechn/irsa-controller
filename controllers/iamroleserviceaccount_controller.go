@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	gerrors "github.com/pkg/errors"
@@ -214,6 +215,11 @@ func (r *IamRoleServiceAccountReconciler) reconcile(ctx context.Context, irsa *i
 			updated = r.updateIrsaStatus(ctx, irsa, irsav1alpha1.IrsaConflict, err)
 		}
 		return !updated, gerrors.Wrap(err, "Reconcile service account failed")
+	}
+
+	if irsa.Status.Condition != irsav1alpha1.IrsaOK {
+		updated := r.updateIrsaStatus(ctx, irsa, irsav1alpha1.IrsaOK, nil)
+		return !updated, nil
 	}
 
 	return true, nil
@@ -441,7 +447,7 @@ func (r *IamRoleServiceAccountReconciler) updateExternalResourcesIfNeed(ctx cont
 	gotRole, err := r.iamRoleClient.Get(ctx, roleName)
 
 	if err != nil {
-		return gerrors.Wrap(err, "Get iam role by arn failed")
+		return gerrors.Wrap(err, "Get iam role by roleName failed")
 	}
 
 	wantRole := aws.NewIamRole(r.oidc, irsa, r.iamRoleClient.GetAdditionalTags())
@@ -491,7 +497,12 @@ func (r *IamRoleServiceAccountReconciler) updateExternalResourcesIfNeed(ctx cont
 	}
 
 	if !reflect.DeepEqual(gotRole.InlinePolicy, wantRole.InlinePolicy) {
-		err = r.iamRoleClient.UpdateInlinePolicy(ctx, roleName, wantRole.InlinePolicy)
+		var err error
+		if wantRole.InlinePolicy == nil {
+			err = r.iamRoleClient.DeleteInlinePolicy(ctx, roleName)
+		} else {
+			err = r.iamRoleClient.UpdateInlinePolicy(ctx, roleName, wantRole.InlinePolicy)
+		}
 		if err != nil {
 			return gerrors.Wrap(err, "Sync inline policy failed")
 		}
@@ -565,9 +576,15 @@ func (r *IamRoleServiceAccountReconciler) updateIrsaStatus(ctx context.Context, 
 	if reconcileErr != nil {
 		newReason = reconcileErr.Error()
 	}
-	if from == condition && irsa.Status.Reason == newReason {
+	compare := func(a, b string) bool {
+		// ignore request id
+		flag := "request id"
+		return strings.Split(a, flag)[0] == strings.Split(b, flag)[0]
+	}
+	if from == condition && compare(irsa.Status.Reason, newReason) {
 		return false
 	}
+	l.Info("Updating status ...", "msg", newReason)
 	irsa.Status.Reason = newReason
 	irsa.Status.Condition = condition
 	err := r.Status().Update(ctx, irsa)
