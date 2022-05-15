@@ -6,17 +6,21 @@ Using CRD to manage Kubernetes `ServiceAccount` and AWS `Iam Role`.
 
 ## Installation
 
-### From Source Code
+### Kustomize
 
 ```shell
 git clone https://github.com/domechn/irsa-controller
 cd irsa-controller
+# Update the configuration
+vim config/manager/controller_manager_config.yaml
 make deploy
 ```
 
-### Helm Chart
+Uninstallation
 
-TODO
+```shell
+make undeploy
+```
 
 ## Usage
 
@@ -48,7 +52,20 @@ spec:
       statement:
         - effect: Allow
           resource:
-            - '*'
+            - "*"
           action:
-            - '*'
+            - "*"
 ```
+
+## Configuration
+
+| Parameter                 | Description                                                                                         | Required | Default |
+| ------------------------- | --------------------------------------------------------------------------------------------------- | -------- | ------- |
+| cluster                   | The name of the K8S cluster on which irsa-controller is running                                     | yes      |         |
+| oidcProviderArn           | The oidc provider of the K8S cluster on which irsa-controller is running used to authenticate users | yes      |         |
+| iamRolePrefix             | Prefix of the iam role name created by irsa-controller                                              | no       |         |
+| awsConfig                 | AWS related configurations                                                                          | no       |         |
+| awsConfig.endpoint        | The url of AWS IAM endpoint                                                                         | no       |         |
+| awsConfig.accessKeyID     | The value of aws access key                                                                         | no       |         |
+| awsConfig.secretAccessKey | The value of aws access key secret                                                                  | no       |         |
+| awsConfig.disableSSL      | Whether disable SSL when connect to aws endpoint                                                    | no       |         |

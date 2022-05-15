@@ -10,10 +10,22 @@ leaderElection:
   leaderElect: true
   resourceName: 540024c5.domc.me
   resourceNamespace: irsa-controller-system
+
+# The name of the K8S cluster on which irsa-controller is running. Used for the iam role name generation
 cluster: kind-test
-awsConfig:
-  endpoint: http://localstack.localstack:4566
-  accessKeyID: test
-  secretAccessKey: test
-  disableSSL: true
+
+# The oidc provider of the K8S cluster on which irsa-controller is running used to authenticate users
+# https://docs.aws.amazon.com/eks/latest/userguide/authenticate-oidc-identity-provider.html
 oidcProviderArn: arn:aws:iam::000000000000:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE
+
+# Prefix of the iam role name created by irsa-controller
+# iamRolePrefix:
+
+# Set up aws related configurations
+# If not set, irsa-controller creates the client using the value of the AWS default environment variable
+# https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html
+# awsConfig:
+#   endpoint: http://localstack.localstack:4566
+#   accessKeyID: test
+#   secretAccessKey: test
+#   disableSSL: true
