@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"fmt"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	cfg "sigs.k8s.io/controller-runtime/pkg/config/v1alpha1"
 )
@@ -75,4 +77,21 @@ type ProjectConfigList struct {
 
 func init() {
 	SchemeBuilder.Register(&ProjectConfig{}, &ProjectConfigList{})
+}
+
+func (p *ProjectConfig) Validate() error {
+	if p.OIDCProviderArn == "" {
+		return fmt.Errorf("OIDCProviderArn is required.")
+	}
+
+	if p.ClusterName == "" {
+		return fmt.Errorf("ClusterName is required.")
+	}
+
+	if p.AWSConfig != nil {
+		if p.AWSConfig.AccessKeyID == "" || p.AWSConfig.SecretAccessKey == "" {
+			return fmt.Errorf("AccessKeyID and SecretAccessKey is required when aws config is setten.")
+		}
+	}
+	return nil
 }

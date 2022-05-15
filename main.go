@@ -94,6 +94,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := ctrlConfig.Validate(); err != nil {
+		setupLog.Error(err, "invalid config")
+		os.Exit(1)
+	}
+
 	irsar := controllers.NewIamRoleServiceAccountReconciler(mgr.GetClient(), mgr.GetScheme(), ctrlConfig.OIDCProviderArn, aws.NewIamClient(ctrlConfig.ClusterName, ctrlConfig.IamRolePrefix, ctrlConfig.AdditionalTags, aws.NewAWSConfigFromSpec(ctrlConfig.AWSConfig)))
 
 	if err = irsar.SetupWithManager(mgr); err != nil {
