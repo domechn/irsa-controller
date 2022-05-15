@@ -33,6 +33,7 @@ type ProjectConfigSpec struct {
 
 	IamRolePrefix   string         `json:"iamRolePrefix,omitempty"`
 	OIDCProviderArn string         `json:"oidcProviderArn,omitempty"`
+	Cluster         string         `json:"cluster,omitempty"`
 	AdditionalTags  []string       `json:"additionalTags,omitempty"`
 	AWSConfig       *AWSConfigSpec `json:"awsConfig,omitempty"`
 }
@@ -84,8 +85,8 @@ func (p *ProjectConfig) Validate() error {
 		return fmt.Errorf("OIDCProviderArn is required.")
 	}
 
-	if p.ClusterName == "" {
-		return fmt.Errorf("ClusterName is required.")
+	if p.Cluster == "" {
+		return fmt.Errorf("Cluster is required.")
 	}
 
 	if p.AWSConfig != nil {

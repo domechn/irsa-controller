@@ -19,7 +19,6 @@ package aws
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"reflect"
 	"strings"
@@ -453,10 +452,6 @@ func TestIamClient_DetachRolePolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Attach role policy failed: %v", err)
 	}
-
-	fmt.Println(client.iamClient.ListAttachedRolePolicies(&iam.ListAttachedRolePoliciesInput{
-		RoleName: role.Role.RoleName,
-	}))
 
 	type args struct {
 		ctx      context.Context
