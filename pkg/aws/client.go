@@ -354,16 +354,6 @@ func (c *IamClient) Delete(ctx context.Context, roleArn string) error {
 	return nil
 }
 
-func (c *IamClient) DeletePolicy(ctx context.Context, policyArn string) error {
-	_, err := c.iamClient.DeletePolicyWithContext(ctx, &iam.DeletePolicyInput{
-		PolicyArn: aws.String(policyArn),
-	})
-	if err != nil {
-		return errors.Wrap(err, "Delete policy failed")
-	}
-	return nil
-}
-
 func (c *IamClient) DeleteInlinePolicy(ctx context.Context, roleName string) error {
 	_, err := c.iamClient.DeleteRolePolicyWithContext(ctx, &iam.DeleteRolePolicyInput{
 		RoleName:   aws.String(roleName),
