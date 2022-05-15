@@ -26,6 +26,8 @@ make undeploy
 
 ### Use externally created IAM Role
 
+Irsa-controller will add `AssumePolicy` to this iam role to allow the role to be used by the serviceAccount. And controller will not manage the permissions of this role. Users can dynamically change the permissions of this role through other tools such as `AWS Console` or `TerraForm`.
+
 ```yaml
 apiVersion: irsa.domc.me/v1alpha1
 kind: IamRoleServiceAccount
@@ -36,6 +38,8 @@ spec:
 ```
 
 ### Use CRD to define permissions for iam role
+
+Irsa-controller will create an iam role on AWS based on the user-defined policy. The role name is `$prefix-$cluster-$namespace-$name`. And controller will manage the life cycle of the role, creating, modifying, and deleting the role.
 
 ```yaml
 apiVersion: irsa.domc.me/v1alpha1
