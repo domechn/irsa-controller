@@ -73,3 +73,36 @@ spec:
 | awsConfig.accessKeyID     | The value of aws access key                                                                         | no       |         |
 | awsConfig.secretAccessKey | The value of aws access key secret                                                                  | no       |         |
 | awsConfig.disableSSL      | Whether disable SSL when connect to aws endpoint                                                    | no       |         |
+
+## Permissions
+
+The AWS permissions required by irsa-controller.
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "VisualEditor0",
+            "Effect": "Allow",
+            "Action": [
+                "iam:GetRole",
+                "iam:UpdateAssumeRolePolicy",
+                "iam:TagRole",
+                "iam:DeletePolicy",
+                "iam:CreateRole",
+                "iam:DeleteRole",
+                "iam:AttachRolePolicy",
+                "iam:PutRolePolicy",
+                "iam:DetachRolePolicy",
+                "iam:ListAttachedRolePolicies",
+                "iam:DeleteRolePolicy",
+                "iam:CreatePolicyVersion",
+                "iam:ListRolePolicies",
+                "iam:GetRolePolicy"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
