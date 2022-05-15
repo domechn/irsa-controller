@@ -1143,7 +1143,6 @@ func TestIamClient_Delete(t *testing.T) {
 }
 
 func TestIamClient_DeleteInlinePolicy(t *testing.T) {
-
 	t.Parallel()
 	client := getMockIamClient(t, l)
 
@@ -1152,7 +1151,7 @@ func TestIamClient_DeleteInlinePolicy(t *testing.T) {
 		t.Fatalf("New assume role policy doc failed: %v", err)
 	}
 	role, err := client.iamClient.CreateRole(&iam.CreateRoleInput{
-		RoleName:                 aws.String("test-update-inline-policy-role"),
+		RoleName:                 aws.String("test-delete-inline-policy-role"),
 		AssumeRolePolicyDocument: aws.String(doc),
 	})
 	if err != nil {
