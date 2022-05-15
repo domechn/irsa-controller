@@ -550,6 +550,9 @@ func (r *IamRoleServiceAccountReconciler) deleteExternalResources(ctx context.Co
 	}
 	// clean aws iam role
 	if err := r.iamRoleClient.Delete(ctx, roleArn); err != nil {
+		if aws.ErrIsNotFound(gerrors.Unwrap(err)) {
+			return nil
+		}
 		return gerrors.Wrap(err, "Delete iam role failed")
 	}
 	return nil

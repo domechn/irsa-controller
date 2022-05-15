@@ -80,7 +80,7 @@ type IamRoleServiceAccountStatus struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Pending;RoleConflict;Forbidden;Failed;Progressing;Created
+// +kubebuilder:validation:Enum=Pending;Conflict;Forbidden;Failed;Progressing;Created
 type IrsaCondition string
 
 var (
@@ -124,5 +124,9 @@ func init() {
 
 // AwsIamRoleName returns the name of iam role in aws account
 func (i *IamRoleServiceAccount) AwsIamRoleName(prefix, cluster string) string {
-	return fmt.Sprintf("%s-%s-%s-%s", prefix, cluster, i.GetNamespace(), i.GetName())
+	prefixClusterName := fmt.Sprintf("%s-%s", prefix, cluster)
+	if prefix == "" {
+		prefixClusterName = cluster
+	}
+	return fmt.Sprintf("%s-%s-%s", prefixClusterName, i.GetNamespace(), i.GetName())
 }
