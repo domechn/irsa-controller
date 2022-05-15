@@ -125,7 +125,7 @@ func (r *IamRoleServiceAccountReconciler) Reconcile(ctx context.Context, req ctr
 	} else {
 		// irsa is being deleted
 		if _, _, err := r.finalize(ctx, irsa, true); err != nil {
-			l.Error(err, "Delete aws iam role failed", irsa.Status.RoleArn)
+			l.Error(err, "Delete aws iam role failed", "roleArn", irsa.Status.RoleArn)
 			return ctrl.Result{
 				Requeue: true,
 			}, nil
