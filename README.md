@@ -6,7 +6,7 @@ Using CRD to manage Kubernetes `ServiceAccount` and AWS `Iam Role`.
 
 ## Prerequisites
 
-- EKS or Kubernetes With [amazon-eks-pod-identity-webhook](amazon-eks-pod-identity-webhook) Installed
+- EKS or Kubernetes With [amazon-eks-pod-identity-webhook](https://github.com/aws/amazon-eks-pod-identity-webhook) Installed
 - Kubernetes Version >= 1.16
 
 ## Installation
