@@ -68,6 +68,8 @@ spec:
 
 ## Configuration
 
+All configs are placed in [controller_manager_config.yaml](config/manager/controller_manager_config.yaml)
+
 | Parameter                 | Description                                                                                         | Required | Default |
 | ------------------------- | --------------------------------------------------------------------------------------------------- | -------- | ------- |
 | cluster                   | The name of the K8S cluster on which irsa-controller is running                                     | yes      |         |
