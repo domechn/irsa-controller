@@ -66,6 +66,26 @@ spec:
             - "*"
 ```
 
+### Using permission of IAM Role
+
+When `IamRoleServiceAccount` is created, irsa-controller automatically creates `ServiceAccount` in Kubernetes and calls the AWS API to create a new `IAM Role` that can be assumed by `ServiceAccount` or to modify a specific `IAM Role` that can be assumed by `ServiceAccount`.
+
+The created `ServiceAccount` will be like
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::000000000000:role/kind-test-irsa-controller-system-iamroleserviceaccount-sample
+  name: iamroleserviceaccount-sample
+  namespace: irsa-controller-system
+secrets:
+- name: iamroleserviceaccount-sample-token-cqjwg
+```
+
+When a `Pod` is bound to this `ServiceAccount`, it has access to aws resources defined at `IamRoleServiceAccount`.
+
 ## Configuration
 
 All configs are placed in [controller_manager_config.yaml](config/manager/controller_manager_config.yaml)
