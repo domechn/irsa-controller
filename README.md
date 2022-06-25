@@ -88,7 +88,7 @@ When a `Pod` is bound to this `ServiceAccount`, it has access to aws resources d
 
 ## Configuration
 
-All configs are placed in [controller_manager_config.yaml](config/manager/controller_manager_config.yaml)
+Configs are placed in [controller_manager_config.yaml](config/manager/controller_manager_config.yaml)
 
 | Parameter                 | Description                                                                                         | Required | Default |
 | ------------------------- | --------------------------------------------------------------------------------------------------- | -------- | ------- |
@@ -100,6 +100,8 @@ All configs are placed in [controller_manager_config.yaml](config/manager/contro
 | awsConfig.accessKeyID     | The value of aws access key                                                                         | no       |         |
 | awsConfig.secretAccessKey | The value of aws access key secret                                                                  | no       |         |
 | awsConfig.disableSSL      | Whether disable SSL when connect to aws endpoint                                                    | no       |         |
+
+You can also use `eks.amazonaws.com/role-arn` annotation in serviceaccount to give `irsa-controller` permission to modify IamRole to replace the mode that uses `accessKey`. Update the annotation in [manager_serviceaccount_patch.yaml](config/default/manager_serviceaccount_patch.yaml)
 
 ## Permissions
 
